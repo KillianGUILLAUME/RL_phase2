@@ -15,6 +15,36 @@
 
 ---
 
+## ⚠️ **Avertissement Éthique & Usage Responsable**
+
+Ce projet est **strictement destiné à la recherche académique** en intelligence artificielle et théorie des jeux.
+Il ne doit **en aucun cas** être utilisé pour :
+- **Triche ou avantage déloyal** dans des applications de poker en ligne.
+- **Exploitation commerciale** sans accord explicite des auteurs ou détenteurs des données sources.
+- **Contournement des règles** des plateformes de poker (qui interdisent les outils d'aide à la décision en temps réel).
+
+> **Conformité légale** :
+> Les modèles entraînés sur des données de parties réelles (comme celles de Pluribus) sont soumis aux licences des auteurs originaux.
+> Toute utilisation doit respecter les **CGU des sites de poker** et les **lois locales** sur les jeux d'argent.
+
+---
+
+## 🙏 Remerciements
+
+Ce travail repose sur les contributions de la communauté scientifique et open-source :
+
+### Données d'entraînement
+- **Pluribus** (Meta/Facebook AI Research) :
+  Données de parties publiées par [Noam Brown et Tuomas Sandholm](https://science.sciencemag.org/content/365/6456/885) (Science, 2019).
+  Accès via le projet **[Poker-Hand-History](https://github.com/uoftcprg/poker-hand-history)** (University of Toronto CPRG).
+
+### Outils open-source
+- [RLCard](https://github.com/datamllab/rlcard) (environnement poker pour RL)
+- [Treys](https://github.com/ihendley/treys) (évaluation de mains)
+- [Stable-Baselines3](https://github.com/DLR-RM/stable-baselines3) (implémentation PPO/DQN)
+
+---
+
 ## 📋 Table des matières
 
 - [Vue d'ensemble](#-vue-densemble)
@@ -41,25 +71,20 @@
 
 ## 🎯 Vue d'ensemble
 
-**RL_phase2** est un framework de recherche qui combine **Apprentissage par Renforcement** (DQN, PPO) et **Apprentissage Supervisé** (XGBoost entraîné sur les données de [Pluribus](https://science.fb.com/publications/superhuman-ai-for-multiplayer-poker/)) pour créer des agents de poker compétitifs au **No-Limit Texas Hold'em 6-max**.
+**RL_phase2** est un framework de recherche combinant :
+- **Apprentissage par Renforcement** (DQN, MaskablePPO)
+- **Apprentissage Supervisé** (XGBoost entraîné sur les données de [Pluribus](https://science.fb.com/publications/superhuman-ai-for-multiplayer-poker/))
+
+pour créer des agents compétitifs au **No-Limit Texas Hold'em 6-max**.
 
 ### Philosophie du projet
 
-```
+```text
 Données Pluribus (.phh)  ──►  XGBoost (Imitation Learning)  ──►  Adversaire expert
                                                                         │
 Environnement RLCard     ──►  DQN / MaskablePPO (RL)        ──►  Agent  │ vs
                                                                         │
                               Feature Extractor (87 dims)    ◄──  GameState standardisé
-```
-
-Le projet repose sur trois piliers :
-
-1. **Imitation Learning** — Un agent XGBoost entraîné sur ~10 000 mains de Pluribus (l'IA superhuman de Meta) capte les patterns stratégiques d'un joueur quasi-optimal.
-2. **Reinforcement Learning** — Des agents DQN et PPO (via Stable-Baselines3 MaskablePPO) apprennent par l'expérience, en jouant des millions de mains contre divers adversaires.
-3. **Feature Engineering expert** — Un extracteur de 87 features couvrant cartes, position, stack, action history et théorie du jeu, alimenté par la bibliothèque [Treys](https://github.com/ihendley/treys) pour l'évaluation de mains.
-
----
 
 ## 🏗 Architecture
 
@@ -558,6 +583,5 @@ config = FullTrainingConfig.load('configs/ma_config.json')
 ---
 
 <p align="center">
-  <strong>Fait avec ❤️ et beaucoup de <code>BB/main</code></strong><br>
-  <em>Recherche en IA appliquée au poker — Killian GUILLAUME</em>
+  <em>Recherche en mathématiques appliquées / IA — Killian GUILLAUME</em>
 </p>
