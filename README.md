@@ -85,6 +85,7 @@ Données Pluribus (.phh)  ──►  XGBoost (Imitation Learning)  ──►  Ad
 Environnement RLCard     ──►  DQN / MaskablePPO (RL)        ──►  Agent  │ vs
                                                                         │
                               Feature Extractor (87 dims)    ◄──  GameState standardisé
+```
 
 ## 🏗 Architecture
 
