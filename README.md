@@ -9,7 +9,7 @@
     <img src="https://img.shields.io/badge/RLCard-1.0.5-green" alt="RLCard">
     <img src="https://img.shields.io/badge/XGBoost-1.7.6-blue?logo=xgboost" alt="XGBoost">
     <img src="https://img.shields.io/badge/SB3--Contrib-MaskablePPO-orange" alt="SB3-Contrib">
-    <img src="https://img.shields.io/badge/Licence-Research-lightgrey" alt="Licence">
+    <a href="LICENSE"><img src="https://img.shields.io/badge/Licence-CC%20BY--NC%204.0-red" alt="Licence CC BY-NC 4.0"></a>
   </p>
 </p>
 
@@ -17,15 +17,29 @@
 
 ## ⚠️ **Avertissement Éthique & Usage Responsable**
 
-Ce projet est **strictement destiné à la recherche académique** en intelligence artificielle et théorie des jeux.
-Il ne doit **en aucun cas** être utilisé pour :
-- **Triche ou avantage déloyal** dans des applications de poker en ligne.
-- **Exploitation commerciale** sans accord explicite des auteurs ou détenteurs des données sources.
-- **Contournement des règles** des plateformes de poker (qui interdisent les outils d'aide à la décision en temps réel).
+> [!CAUTION]
+> **Ce projet est STRICTEMENT réservé à la recherche académique en intelligence artificielle et théorie des jeux.**
+> Toute utilisation commerciale ou à des fins de triche est **formellement interdite**.
 
-> **Conformité légale** :
-> Les modèles entraînés sur des données de parties réelles (comme celles de Pluribus) sont soumis aux licences des auteurs originaux.
-> Toute utilisation doit respecter les **CGU des sites de poker** et les **lois locales** sur les jeux d'argent.
+Ce projet est destiné **exclusivement** à la recherche en intelligence artificielle, théorie des jeux et mathématiques appliquées.
+
+### 🚫 Usages interdits
+
+| Usage | Statut |
+|---|---|
+| Triche ou aide en temps réel sur des sites de poker en ligne | **❌ INTERDIT** |
+| Exploitation commerciale (vente, SaaS, API payante) | **❌ INTERDIT** |
+| Contournement des CGU des plateformes de poker | **❌ INTERDIT** |
+| Développement de bots jouant avec de l'argent réel | **❌ INTERDIT** |
+| Recherche académique, éducation, expérimentation personnelle | ✅ Autorisé |
+| Publication scientifique (avec citation) | ✅ Autorisé |
+
+### ⚖️ Conformité légale
+
+- Les plateformes de poker en ligne (PokerStars, GGPoker, Winamax, etc.) **interdisent explicitement** l'utilisation d'outils d'aide à la décision en temps réel. Tout contrevenant s'expose à la **fermeture de compte** et à des **poursuites légales**.
+- Les modèles entraînés sur des données Pluribus sont soumis aux licences des auteurs originaux (Meta AI Research).
+- L'utilisation de ce logiciel doit respecter les **lois locales** applicables aux jeux d'argent.
+- Ce projet est distribué sous licence **[CC BY-NC 4.0](LICENSE)** — voir la section [Licence](#-licence).
 
 ---
 
@@ -65,6 +79,7 @@ Ce travail repose sur les contributions de la communauté scientifique et open-s
 - [Configuration](#%EF%B8%8F-configuration)
 - [Roadmap](#-roadmap)
 - [Stack technologique](#-stack-technologique)
+- [Licence](#-licence)
 - [Contribuer](#-contribuer)
 
 ---
@@ -548,28 +563,45 @@ config = FullTrainingConfig.load('configs/ma_config.json')
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│                    APPLICATION LAYER                 │
-│  live_poker_pro.py │ play_human.py │ tournament.py   │
+│                    APPLICATION LAYER                │
+│  live_poker_pro.py │ play_human.py │ tournament.py  │
 ├─────────────────────────────────────────────────────┤
-│                     AGENT LAYER                      │
-│    SmartDQNAgent  │  MaskablePPO  │  XGBoostAgent    │
+│                     AGENT LAYER                     │
+│    SmartDQNAgent  │  MaskablePPO  │  XGBoostAgent   │
 ├─────────────────────────────────────────────────────┤
-│                    FEATURE LAYER                     │
-│         FeatureExtractor (87 dims) + Treys           │
+│                    FEATURE LAYER                    │
+│         FeatureExtractor (87 dims) + Treys          │
 ├─────────────────────────────────────────────────────┤
-│                    ADAPTER LAYER                     │
-│        RLCardAdapter  │  PluribusAdapter              │
+│                    ADAPTER LAYER                    │
+│        RLCardAdapter  │  PluribusAdapter            │
 ├─────────────────────────────────────────────────────┤
-│                     CORE LAYER                       │
-│              GameState (dataclass)                    │
+│                     CORE LAYER                      │
+│              GameState (dataclass)                  │
 ├─────────────────────────────────────────────────────┤
-│                  ENVIRONMENT LAYER                   │
-│           RLCard  │  Gymnasium  │  SB3               │
+│                  ENVIRONMENT LAYER                  │
+│           RLCard  │  Gymnasium  │  SB3              │
 ├─────────────────────────────────────────────────────┤
-│                  INFRASTRUCTURE                      │
-│    PyTorch │ XGBoost │ NumPy │ TensorBoard │ Rich    │
+│                  INFRASTRUCTURE                     │
+│    PyTorch │ XGBoost │ NumPy │ TensorBoard │ Rich   │
 └─────────────────────────────────────────────────────┘
 ```
+
+---
+
+## 📄 Licence
+
+Ce projet est distribué sous la licence **Creative Commons Attribution - Pas d'Utilisation Commerciale 4.0 International** ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.fr)).
+
+### Ce que cela signifie :
+
+| Vous pouvez | Vous ne pouvez PAS |
+|---|---|
+| ✅ Utiliser pour la recherche | ❌ Vendre ou commercialiser |
+| ✅ Modifier et adapter | ❌ Créer un service payant |
+| ✅ Partager (avec attribution) | ❌ Utiliser pour tricher au poker |
+| ✅ Publier des travaux dérivés (non-commerciaux) | ❌ Retirer la mention d'attribution |
+
+Voir le fichier [LICENSE](LICENSE) pour le texte complet.
 
 ---
 

@@ -7,6 +7,71 @@ from rlcard.agents import RandomAgent
 from features.feature_builder import FeatureExtractor
 from adapters.rlcard_adapter import RLCardAdapter
 from agents.xgboost_agent import XGBoostRLCardAgent
+from sb3_contrib import MaskablePPO
+
+
+def dummy_schedule(progress_remaining: float) -> float:
+    return 0.0003
+
+    
+# --- CLASSE PPOBotAgent (VERSION LÉGÈRE) ---
+class PPOBotAgent:
+    """
+    Transforme un modèle SB3 (.zip) en Agent compatible RLCard.
+    OPTIMISATION : On ne garde que la 'Policy' (le cerveau) pour éviter
+    les erreurs de pickle multiprocessing avec les lambdas du modèle complet.
+    """
+    def __init__(self, model_path, env):
+        self.env = env
+        
+        # 1. On charge le modèle complet temporairement
+        try:
+            temp_model = MaskablePPO.load(
+                model_path, 
+                custom_objects={
+                    "learning_rate": dummy_schedule,
+                    "lr_schedule": dummy_schedule,
+                    "clip_range": dummy_schedule
+                }
+            )
+        except Exception:
+            temp_model = MaskablePPO.load(model_path)
+            
+        # 2. CHIRURGIE : On extrait juste le cerveau (Policy) 🧠
+        # Cela supprime les optimiseurs et schedules qui font planter le pickle
+        self.policy = temp_model.policy
+        
+        # On passe en mode évaluation (fige les poids)
+        self.policy.set_training_mode(False)
+        
+        # 3. On supprime le gros modèle lourd
+        del temp_model
+            
+        self.extractor = FeatureExtractor()
+
+    def step(self, state):
+        # 1. Conversion State RLCard -> GameState
+        try:
+            game_state = RLCardAdapter.to_game_state(state, self.env)
+            obs = self.extractor.extract(game_state)
+        except Exception:
+            # Fallback random
+            return np.random.choice(list(state['legal_actions'].keys()))
+
+        # 2. Masques
+        masks = np.zeros(self.env.num_actions, dtype=bool)
+        legal_actions = list(state['legal_actions'].keys())
+        masks[legal_actions] = True
+
+        # 3. Prédiction avec la POLICY directement (et pas model.predict)
+        # La policy MaskablePPO accepte bien l'argument action_masks
+        action, _ = self.policy.predict(obs, action_masks=masks, deterministic=True)
+        
+        return action
+
+    def eval_step(self, state):
+        action = self.step(state)
+        return action, {}
 
 
 class PokerSB3Wrapper(gym.Env):
@@ -29,6 +94,19 @@ class PokerSB3Wrapper(gym.Env):
             dummy_hero = RandomAgent(num_actions=self.env.num_actions)
             all_agents = [dummy_hero] + self.opponents
             self.env.set_agents(all_agents)
+        elif str_opponents.endswith('.zip'): #we directly give the path to the model
+            print(f"⚔️ SELF-PLAY : Chargement du modèle {str_opponents}")
+            if os.path.exists(str_opponents):
+                # On passe self.env à chaque agent
+                self.opponents = [
+                    PPOBotAgent(model_path=str_opponents, env=self.env) 
+                    for _ in range(num_opponents)
+                ]
+                dummy_hero = RandomAgent(num_actions=self.env.num_actions)
+                all_agents = [dummy_hero] + self.opponents
+                self.env.set_agents(all_agents)
+            else:
+                raise FileNotFoundError(f"Model not found: {str_opponents}")
         else:
             print('pas d\'agent')
         self.action_space = spaces.Discrete(self.env.num_actions)

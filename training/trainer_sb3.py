@@ -18,14 +18,25 @@ from training.sb3wrapper import PokerSB3Wrapper
 from training.callbacks import ProgressCallback, CheckpointCallback, SmartCheckpointCallback
 
 
+
+from typing import Callable
+
+def linear_schedule(initial_value: float) -> Callable[[float], float]:
+    """
+    Fonction nécessaire pour corriger le bug Python 3.10 -> 3.12
+    """
+    def func(progress_remaining: float) -> float:
+        return progress_remaining * initial_value
+    return func
+
 # --- TA CONFIG ---
 MY_CONFIG = {
-    'total_timesteps': 1_000_000,
+    'total_timesteps': 3_000_000,
     'N_CPU': os.cpu_count(),
     'BATCH_SIZE': 512
 }
 
-OPPONENT_TYPE = 'random' 
+OPPONENT_TYPE = 'xgb' 
 NUM_OPPONENTS = 5
 
 
@@ -154,15 +165,44 @@ if __name__ == '__main__':
     
     # 2. Initialisation du modèle MaskablePPO
     # On utilise MlpPolicy car tes features (87 floats) sont un vecteur plat
-    model = MaskablePPO(
-        "MlpPolicy",
-        vec_env,
-        tensorboard_log=LOG_DIR,
-        **PPO_PARAMS
-    )
+    # --- MODIFICATION ICI : CHARGEMENT DU MODÈLE ---
+    pretrained_path = "models/rl/PPO_Poker_random_1770672362/FINAL_MODEL_end_steps.zip"
+    
+    if os.path.exists(pretrained_path):
+        print(f"♻️ CHARGEMENT DU MODÈLE PRÉ-ENTRAÎNÉ : {pretrained_path}")
+        
+        # --- CORRECTION DU BUG PYTHON 3.10 vs 3.12 ---
+        # On force la réécriture des fonctions qui font planter le chargement
+        custom_objects = {
+            "learning_rate": 3e-4,
+            "lr_schedule": linear_schedule(3e-4),
+            "clip_range": linear_schedule(0.2)
+        }
+        
+        # On charge le modèle en remplaçant les parties cassées
+        model = MaskablePPO.load(
+            pretrained_path, 
+            env=vec_env, 
+            tensorboard_log=LOG_DIR,
+            custom_objects=custom_objects, # <-- C'est ça qui répare tout !
+            print_system_info=True
+        )
+        
+        # On s'assure que les hyperparamètres sont bien mis à jour
+        model.learning_rate = linear_schedule(3e-4)
+        model.clip_range = linear_schedule(0.2)
+        model.ent_coef = 0.01
+    else:
+        print("👶 Aucun modèle trouvé, création d'un nouveau modèle (FROM SCRATCH)...")
+        model = MaskablePPO(
+            "MlpPolicy",
+            vec_env,
+            tensorboard_log=LOG_DIR,
+            **PPO_PARAMS
+        )
     
     smart_callback = SmartCheckpointCallback(
-        save_freq=max(50_000 // MY_CONFIG['N_CPU'], 1), 
+        save_freq=max(5000 // MY_CONFIG['N_CPU'], 1), 
         save_dir=SAVE_DIR, 
         config=TRAINING_CONFIG
     )
@@ -183,6 +223,10 @@ if __name__ == '__main__':
         print(f"\n✅ Entraînement terminé en {duration/60:.1f} minutes.")
         
         save_sb3_with_version(model, "FINAL_MODEL", SAVE_DIR, "end", TRAINING_CONFIG)
+
+        final_std_path = os.path.join(SAVE_DIR, "final_model_standard.zip")
+        model.save(final_std_path)
+        print(f"✅ Modèle standard sauvegardé : {final_std_path}")
         
     except KeyboardInterrupt:
         print("\n🛑 Entraînement interrompu manuellement.")
