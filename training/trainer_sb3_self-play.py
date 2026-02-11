@@ -11,6 +11,8 @@ from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.callbacks import BaseCallback
 from tensorboard.backend.event_processing.event_accumulator import EventAccumulator
+import wandb
+from wandb.integration.sb3 import WandbCallback
 
 from training.sb3wrapper import PokerSB3Wrapper, PPOBotAgent
 from training.callbacks import ProgressCallback, CheckpointCallback, SmartCheckpointCallback, save_sb3_with_version
@@ -130,6 +132,20 @@ if __name__ == '__main__':
     vec_env = make_vec_env(make_env, n_envs=MY_CONFIG['N_CPU'], vec_env_cls=SubprocVecEnv)
     
     pretrained_path = "models/rl/PPO_Poker_xgb_1770802762/FINAL_MODEL_end_steps.zip"
+
+    if os.getenv("WANDB_KEY"):
+        print(f"🌊 Initialisation Weights & Biases...")
+        run = wandb.init(
+            project="Poker-Bot-RL",  # Nom de ton projet sur le site
+            name=RUN_NAME,           # Nom de cette expérience précise
+            config=TRAINING_CONFIG,  # Il enregistre tous tes hyperparamètres !
+            sync_tensorboard=True,   # Important pour capturer les métriques SB3
+            monitor_gym=True,        # Capture les vidéos si dispo (pas ici, mais bon)
+            save_code=True,          # Sauvegarde ton code pour la postérité
+        )
+    else:
+        print("⚠️ W&B désactivé (Pas de clé trouvée).")
+        run = None
     
     if os.path.exists(pretrained_path):
         print(f"♻️ CHARGEMENT DU CHAMPION : {pretrained_path}")
@@ -166,11 +182,21 @@ if __name__ == '__main__':
         config=TRAINING_CONFIG
     )
 
+    callbacks_list = [smart_callback]
+
+    if run is not None:
+        wandb_callback = WandbCallback(
+            gradient_save_freq=1000, # Sauvegarde les gradients (pour voir si ça explose)
+            model_save_path=f"models/{RUN_NAME}", # Sauvegarde le modèle dans le cloud W&B
+            verbose=2,
+        )
+        callbacks_list.append(wandb_callback)
+
     # Affichage calme
     try:
         model.learn(
             total_timesteps=MY_CONFIG['total_timesteps'], 
-            callback=[smart_callback],
+            callback=callbacks_list,
             log_interval=100,
             progress_bar=True
         )
@@ -184,5 +210,7 @@ if __name__ == '__main__':
         save_sb3_with_version(model, "INTERRUPTED_SELF_PLAY", SAVE_DIR, "interrupted", TRAINING_CONFIG)
     finally:
         vec_env.close()
+        if run is not None:
+            wandb.finish()
         time.sleep(5) 
         plot_training_results(LOG_DIR, SAVE_DIR)
