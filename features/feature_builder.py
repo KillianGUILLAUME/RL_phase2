@@ -9,6 +9,18 @@ from treys import Evaluator, Card
 
 logger = logging.getLogger(__name__)
 
+from .card_features   import CardFeatures
+from .simple_features import SimpleFeature      
+from .game_theory     import GameTheoryFeatures 
+
+
+
+"""
+IMPORTANT :
+For each features we add, we have to put it at the end of the list of features.
+Like this, we will be able to still use older models.
+"""
+
 
 class FeatureExtractor:
     """
@@ -18,7 +30,7 @@ class FeatureExtractor:
     - Pluribus (via PluribusAdapter)
     - RLCard (via RLCardAdapter)
     
-    Features extraites (87 au total):
+    Features extraites (99 au total):
     ═══════════════════════════════════════════════════════════
     1. CARTES (22 features)
        - Hand strength (preflop/postflop)
@@ -46,11 +58,12 @@ class FeatureExtractor:
        - Street (one-hot)
        - Blinds ratio
     
-    6. THÉORIE DU JEU (20 features)
-       - EV estimé
-       - Fold equity
-       - Implied odds
-       - Range advantage
+    6. THÉORIE DU JEU 
+       - EV estimé (call/fold/raise)
+       - Fold equity, Implied/Reverse implied odds
+       - MDF, Alpha, Bet-to-pot ratio, Pot geometry
+       - Range advantage, Board coverage, Polarisation
+       - Betting patterns
     """
     
     # ═══════════════════════════════════════════════════════════
@@ -73,7 +86,7 @@ class FeatureExtractor:
     STREETS = ['preflop', 'flop', 'turn', 'river']
     
     # Nombre total de features
-    NUM_FEATURES = 87
+    NUM_FEATURES = 99
     
     def __init__(self):
         """Initialise l'extracteur."""
@@ -93,7 +106,7 @@ class FeatureExtractor:
             state: GameState standardisé
         
         Returns:
-            np.ndarray de shape (87,) avec toutes les features
+            np.ndarray de shape (91,) avec toutes les features
         """
 
 
@@ -468,7 +481,7 @@ class FeatureExtractor:
         Extrait les features de théorie du jeu avancées.
         
         Returns:
-            Liste de 20 features:
+            Liste de 32 features:
             - [0]: EV estimé du call
             - [1]: EV estimé du fold
             - [2]: EV estimé du raise
@@ -480,25 +493,47 @@ class FeatureExtractor:
             - [10-12]: Board coverage (high/medium/low)
             - [13-15]: Polarisation (polarized/merged/capped)
             - [16-19]: Betting patterns (value/bluff/balanced/exploitative)
+            - [20]: MDF (Minimum Defense Frequency)
+            - [21]: Alpha (Bluff Breakeven Threshold)
+            - [22]: Bet-to-Pot Ratio (normalisé)
+            - [23]: Pot Geometry (sizing optimal multi-street)
+            - [24]: Equity Realization
+            - [25]: Blocker Effects
+            - [26]: Protection Need
+            - [27]: Nut Advantage
+            - [28]: Leverage
+            - [29]: Effective Stack Depth Ratio (SPR)
+            - [30]: Check-Raise Signal
+            - [31]: Equity Denial
         """
         features = []
         
-        # EV estimations simplifiées (3)
+        # EV estimations améliorées (3)
         equity = self._estimate_equity(state.hole_cards, state.board, state.num_active_players)
         pot_odds = state.pot_odds
         
-        # EV call = equity - pot_odds
-        ev_call = max(0, equity - pot_odds)
+        # EV call = equity × pot_total - (1 - equity) × amount_to_call, normalisé [0, 1]
+        pot_total = state.pot_size + state.amount_to_call
+        ev_call_raw = equity * pot_total - (1 - equity) * state.amount_to_call
+        max_val = max(pot_total, state.amount_to_call, 1)
+        ev_call = (ev_call_raw / max_val + 1) / 2  # Centré sur 0.5 = breakeven
+        ev_call = max(0.0, min(1.0, ev_call))
         features.append(ev_call)
         
-        # EV fold = 0 (on perd ce qu'on a déjà mis)
-        ev_fold = 0.0
+        # EV fold = coût du fold (fraction du stack déjà investie dans le pot)
+        invested = max(0, state.pot_size - state.stack)
+        total_initial = state.stack + invested
+        ev_fold = invested / max(total_initial, 1)  # 0 = fold gratuit, ~1 = tout investi
         features.append(ev_fold)
         
-        # EV raise = equity * fold_equity_estimation
+        # EV raise = fold_equity × gain_si_fold + (1 - fold_equity) × gain_si_call
         fold_equity = self._estimate_fold_equity(state)
-        ev_raise = equity * (1 + fold_equity)
-        features.append(min(ev_raise, 1.0))
+        normalizer = max(state.pot_size + state.stack, 1)
+        gain_if_fold = state.pot_size / normalizer
+        gain_if_call = equity * (state.pot_size + state.amount_to_call) / normalizer
+        ev_raise = fold_equity * gain_if_fold + (1 - fold_equity) * gain_if_call
+        ev_raise = max(0.0, min(1.0, ev_raise))
+        features.append(ev_raise)
         
         # Fold equity (1)
         features.append(fold_equity)
@@ -512,10 +547,10 @@ class FeatureExtractor:
         features.append(reverse_implied_odds)
         
         # Commitment level (1)
-        # Pourcentage du stack déjà investi
-        invested = state.pot_size - state.stack
+        # Pourcentage du stack déjà investi (clampé à 0 minimum)
+        invested = max(0, state.pot_size - state.stack)
         commitment = invested / max(state.stack + invested, 1)
-        features.append(commitment)
+        features.append(min(max(commitment, 0.0), 1.0))
         
         # Range advantage (3)
         range_adv = self._estimate_range_advantage(state)
@@ -550,7 +585,345 @@ class FeatureExtractor:
             patterns['exploitative']
         ])
         
-        return features  # 20 features
+        # ─── GTO Fundamentals (4) ───────────────────────────
+        
+        # MDF (Minimum Defense Frequency)
+        # = 1 - α = 1 - bet/(pot+bet) = pot/(pot+bet)
+        # Face à un bet, on DOIT défendre au moins MDF% pour empêcher
+        # les bluffs adverses d'être auto-profitables.
+        # 0 quand pas de bet à affronter (= pas de contrainte de défense)
+        bet_size = state.amount_to_call
+        if bet_size > 0:
+            mdf = state.pot_size / (state.pot_size + bet_size)
+        else:
+            mdf = 0.0
+        features.append(max(0.0, min(1.0, mdf)))
+        
+        # Alpha (Bluff Breakeven Threshold)
+        # = bet/(pot+bet) = fréquence de fold minimale du vilain
+        # pour qu'un bluff soit breakeven. Si fold_equity > α, bluff est +EV.
+        # Utilise le dernier sizing agressif (ou amount_to_call si on est le caller)
+        effective_bet = state.get_last_aggression_amount()
+        if effective_bet <= 0:
+            effective_bet = bet_size
+        if effective_bet > 0:
+            alpha = effective_bet / (state.pot_size + effective_bet)
+        else:
+            alpha = 0.0
+        features.append(max(0.0, min(1.0, alpha)))
+        
+        # Bet-to-Pot Ratio (normalisé [0, 1] via tanh-like scaling)
+        # Sizing relatif au pot : 0 = no bet, 0.5 ≈ pot-size bet, ~1 = overbet
+        if effective_bet > 0 and state.pot_size > 0:
+            raw_ratio = effective_bet / state.pot_size
+            # Sigmoid-like : ratio 1x → 0.5, ratio 2x → 0.67, ratio 3x → 0.75
+            bet_to_pot = raw_ratio / (1.0 + raw_ratio)
+        else:
+            bet_to_pot = 0.0
+        features.append(max(0.0, min(1.0, bet_to_pot)))
+        
+        # Pot Geometry (multi-street optimal sizing)
+        # Fraction géométrique = (S+P)/P ^ (1/n) - 1, où n = streets restantes
+        # Normalisé en comparant le sizing réel au sizing géométrique optimal.
+        # Score > 0.5 = plus gros que géométrique (polarisant)
+        # Score < 0.5 = plus petit que géométrique (merged)
+        # Score = 0.5 = sizing géométrique parfait
+        streets_remaining = {'preflop': 3, 'flop': 2, 'turn': 1, 'river': 0}
+        n_streets = streets_remaining.get(state.street, 0)
+        
+        if n_streets > 0 and state.pot_size > 0 and state.stack > 0:
+            # Sizing géométrique optimal pour get all-in à la river
+            total_ratio = (state.stack + state.pot_size) / state.pot_size
+            geo_fraction = total_ratio ** (1.0 / n_streets) - 1.0
+            geo_bet = state.pot_size * geo_fraction  # Bet optimal
+            
+            if effective_bet > 0 and geo_bet > 0:
+                # Ratio sizing_réel / sizing_géométrique, centré sur 0.5
+                ratio = effective_bet / geo_bet
+                # Sigmoid centré : ratio=1 → 0.5, ratio=2 → 0.67, ratio=0.5 → 0.33
+                pot_geometry = ratio / (1.0 + ratio)
+            else:
+                pot_geometry = 0.5  # Pas de bet = neutre
+        else:
+            pot_geometry = 0.5  # River ou data manquante = neutre
+        features.append(max(0.0, min(1.0, pot_geometry)))
+        
+        # ─── Tier 1 GTO Advanced (3) ────────────────────────
+        
+        # Equity Realization
+        # Fraction de l'equity brute qu'on réalise réellement.
+        # Position IP réalise ~100%, OOP ~65-80%. Les draws réalisent moins
+        # (car ils ne font pas toujours leur tirage). Les mains nutted réalisent plus.
+        # Formule : base_realization × position_mult × hand_type_mult
+        
+        is_ip = 1.0 if state.position in ['BTN', 'CO'] else 0.0
+        
+        # Base : IP = 0.95, OOP = 0.70
+        eq_real_base = 0.95 if is_ip else 0.70
+        
+        if len(state.board) >= 3:
+            flush_made, flush_draw = self._check_flush(state.hole_cards, state.board)
+            straight_made, straight_draw = self._check_straight(state.hole_cards, state.board)
+            hand_strength = self._evaluate_hand_strength(state.hole_cards, state.board)
+            
+            # Les draws réalisent moins (need to hit), sauf si gros draws
+            if flush_draw > 0 or straight_draw > 0:
+                draw_penalty = 0.85  # Les draws réalisent ~85% de leur equity
+                if flush_draw > 0 and straight_draw > 0:
+                    draw_penalty = 0.92  # Combo draw réalise mieux
+            elif hand_strength > 0.8:
+                draw_penalty = 1.05  # Mains très fortes = surréalisation
+            elif hand_strength < 0.3:
+                draw_penalty = 0.75  # Mains faibles = sous-réalisation
+            else:
+                draw_penalty = 1.0  # Mains moyennes = neutre
+        else:
+            draw_penalty = 1.0  # Preflop = neutre
+        
+        # Multi-way penalty : plus d'adversaires = moins de réalisation
+        mw_mult = 1.0 - 0.05 * max(0, state.num_active_players - 2)
+        
+        equity_realization = eq_real_base * draw_penalty * max(mw_mult, 0.7)
+        features.append(max(0.0, min(1.0, equity_realization)))
+        
+        # Blocker Effects
+        # Est-ce que nos cartes bloquent les mains fortes du vilain ?
+        # Exemples : avoir A♠ quand le board a 3 spades → bloque la nut flush
+        #            avoir un K sur un board K-high → bloque top pair
+        # Score : 0 = aucun blocker, 1 = blockers très puissants
+        blocker_score = 0.0
+        
+        if len(state.board) >= 3:
+            board_suits = [self._get_suit_char(c) for c in state.board]
+            hero_suits = [self._get_suit_char(c) for c in state.hole_cards]
+            hero_ranks = [self._card_rank_to_value(c) for c in state.hole_cards]
+            board_ranks = [self._card_rank_to_value(c) for c in state.board]
+            
+            # 1. Nut flush blocker : on a l'As de la couleur dominante du board
+            suit_counts = {}
+            for s in board_suits:
+                suit_counts[s] = suit_counts.get(s, 0) + 1
+            dominant_suit = max(suit_counts, key=suit_counts.get)
+            dominant_count = suit_counts[dominant_suit]
+            
+            if dominant_count >= 3:  # Board monotone ou near-monotone
+                # On a l'As de cette couleur → nut flush blocker (+0.4)
+                for i, hs in enumerate(hero_suits):
+                    if hs == dominant_suit and hero_ranks[i] == 14:
+                        blocker_score += 0.4
+                    elif hs == dominant_suit and hero_ranks[i] >= 12:
+                        blocker_score += 0.2  # K/Q de la couleur
+            elif dominant_count >= 2:  # Flush draw possible
+                for i, hs in enumerate(hero_suits):
+                    if hs == dominant_suit and hero_ranks[i] == 14:
+                        blocker_score += 0.2
+            
+            # 2. Top card blocker : on a la même carte que le board high card
+            max_board = max(board_ranks) if board_ranks else 0
+            for hr in hero_ranks:
+                if hr == max_board and hr >= 12:  # On bloque top pair si on a K/A du board
+                    blocker_score += 0.2
+            
+            # 3. Set blocker : on a une carte qui empêche un set
+            for hr in hero_ranks:
+                if hr in board_ranks and hr >= 10:
+                    blocker_score += 0.1
+            
+            # 4. Straight blocker : on a des cartes qui se connectent au board
+            board_sorted = sorted(board_ranks)
+            for hr in hero_ranks:
+                # Cartes entre les cartes du board (bloquent les suites)
+                if len(board_sorted) >= 2:
+                    for j in range(len(board_sorted) - 1):
+                        gap = board_sorted[j+1] - board_sorted[j]
+                        if 1 < gap <= 3 and board_sorted[j] < hr < board_sorted[j+1]:
+                            blocker_score += 0.1
+        
+        features.append(max(0.0, min(1.0, blocker_score)))
+        
+        # Protection Need
+        # Est-ce que notre main a besoin de protection (i.e. doit-on bet pour deny equity) ?
+        # Top pair sur wet board = gros besoin de protection
+        # Nuts ou très faible = pas de besoin (nuts n'a pas peur, air n'a rien à protéger)
+        # Score : 0 = pas de besoin, 1 = besoin urgent de protéger
+        protection = 0.0
+        
+        if len(state.board) >= 3:
+            hand_strength = self._evaluate_hand_strength(state.hole_cards, state.board)
+            board_tex = self._analyze_board_texture(state.board)
+            
+            # Zone de vulnérabilité : mains moyennes-fortes (0.4 - 0.85)
+            # Les nuts (>0.85) n'ont pas besoin de protection
+            # Les airs (<0.4) n'ont rien à protéger
+            if 0.4 <= hand_strength <= 0.85:
+                # Base proportionnelle à la force (plus c'est fort, plus on veut protéger)
+                # Pic de protection autour de 0.6-0.7 (top pair / overpair)
+                protection = 1.0 - abs(hand_strength - 0.65) / 0.25
+                protection = max(0.0, protection)
+                
+                # Amplification par la dangerosité du board
+                # Board wet/coordonné = plus de draws adverses = plus besoin de protéger
+                board_danger = board_tex.get('wet', 0) * 0.4 + board_tex.get('coordinated', 0) * 0.3
+                protection *= (1.0 + board_danger)
+                
+                # Streets restantes : plus il reste de streets, plus on doit protéger
+                street_mult = {'flop': 1.0, 'turn': 0.7, 'river': 0.0}
+                protection *= street_mult.get(state.street, 0.5)
+            
+            elif hand_strength > 0.85:
+                protection = 0.1  # Nuts = très peu de besoin
+            else:
+                protection = 0.0  # Air = pas de besoin
+        
+        features.append(max(0.0, min(1.0, protection)))
+        
+        # ─── Tier 2 GTO Advanced (3) ────────────────────────
+        
+        # Nut Advantage
+        # Est-ce que notre range contient plus de mains nutted que le vilain ?
+        # Basé sur : position + board texture + board height
+        # IP sur Ace-high board en SRP = gros nut advantage (on a plus d'Ax)
+        # OOP sur board connecté = moins de nut advantage
+        nut_adv = 0.5  # Neutre par défaut
+        
+        if len(state.board) >= 3:
+            board_ranks_na = [self._card_rank_to_value(c) for c in state.board]
+            max_board_rank = max(board_ranks_na)
+            board_tex_na = self._analyze_board_texture(state.board)
+            
+            # A-high / K-high boards favorisent l'IP (3-bettor range)
+            if max_board_rank >= 14:  # Ace-high
+                nut_adv = 0.70 if state.position in ['BTN', 'CO'] else 0.55
+            elif max_board_rank >= 13:  # King-high
+                nut_adv = 0.65 if state.position in ['BTN', 'CO'] else 0.50
+            elif max_board_rank <= 8:  # Low board — favorise le caller (BB/SB)
+                nut_adv = 0.35 if state.position in ['BTN', 'CO'] else 0.60
+            else:
+                nut_adv = 0.50  # Mid board = neutre
+            
+            # Board connecté réduit le nut advantage (plus de combos possibles)
+            coord = board_tex_na.get('coordinated', 0)
+            nut_adv -= coord * 0.15
+            
+            # Board monotone réduit le nut advantage (flush possible)
+            suit_counts_na = {}
+            for c in state.board:
+                s = self._get_suit_char(c)
+                suit_counts_na[s] = suit_counts_na.get(s, 0) + 1
+            if max(suit_counts_na.values()) >= 3:
+                nut_adv -= 0.1
+        
+        features.append(max(0.0, min(1.0, nut_adv)))
+        
+        # Leverage
+        # Capacité à mettre de la pression sur les streets futures.
+        # Leverage = f(stack_restant, streets_restantes)
+        # Plus il reste de stack ET de streets, plus on a de leverage (bluffs crédibles).
+        # Formule : stack_to_pot_ratio normalisé × streets_factor
+        streets_remaining_lev = {'preflop': 3, 'flop': 2, 'turn': 1, 'river': 0}
+        n_streets_lev = streets_remaining_lev.get(state.street, 0)
+        
+        if state.pot_size > 0 and n_streets_lev > 0:
+            spr = state.stack / state.pot_size  # Stack-to-Pot Ratio
+            # SPR de 10+ = beaucoup de leverage, SPR de 1 = presque aucun
+            spr_norm = min(spr / 10.0, 1.0)  # Normalisé : 10 SPR → 1.0
+            streets_factor = n_streets_lev / 3.0  # Preflop=1.0, flop=0.67, turn=0.33
+            leverage = spr_norm * streets_factor
+        else:
+            leverage = 0.0  # River ou pas de pot = pas de leverage
+        
+        features.append(max(0.0, min(1.0, leverage)))
+        
+        # Effective Stack Depth Ratio (SPR normalisé)
+        # SPR = Stack / Pot. Indicateur clé pour toute décision post-flop.
+        # SPR < 2 = commit zone (top pair suffit), SPR > 10 = deep (set mining)
+        # Normalisé avec sigmoid : SPR 4 → 0.50, SPR 1 → 0.20, SPR 10 → 0.77
+        if state.pot_size > 0:
+            raw_spr = state.stack / state.pot_size
+            eff_spr = raw_spr / (raw_spr + 4.0)  # Sigmoid centrée sur SPR=4
+        else:
+            eff_spr = 1.0  # Pas de pot = stack immense relativement
+        
+        features.append(max(0.0, min(1.0, eff_spr)))
+        
+        # ─── Tier 3 GTO (2) ──────────────────────────────────
+        
+        # Check-Raise Signal
+        # Détecte si c'est un bon spot pour check-raise basé sur :
+        # 1. Position OOP (condition nécessaire pour check-raise)
+        # 2. Main forte mais non-nuts (veut build le pot)
+        # 3. Board texture favorable (dry = mieux pour check-raise)
+        cr_signal = 0.0
+        
+        is_oop = state.position in ['SB', 'BB', 'UTG']
+        
+        if is_oop and len(state.board) >= 3:
+            hand_strength_cr = self._evaluate_hand_strength(state.hole_cards, state.board)
+            board_tex_cr = self._analyze_board_texture(state.board)
+            
+            # Zone idéale pour check-raise : mains fortes (0.65-0.90)
+            # ou semi-bluffs avec draws
+            if 0.65 <= hand_strength_cr <= 0.90:
+                cr_signal = 0.7
+                # Board dry = meilleur pour check-raise (moins de scare cards)
+                wet = board_tex_cr.get('wet', 0)
+                cr_signal *= (1.0 - wet * 0.3)
+            
+            # Semi-bluff check-raise avec draws
+            elif hand_strength_cr < 0.4 and len(state.board) >= 3:
+                flush_m, flush_d = self._check_flush(state.hole_cards, state.board)
+                straight_m, straight_d = self._check_straight(state.hole_cards, state.board)
+                if flush_d > 0 or straight_d > 0:
+                    cr_signal = 0.5  # Semi-bluff check-raise viable
+                    if flush_d > 0 and straight_d > 0:
+                        cr_signal = 0.65  # Combo draw = excellent check-raise
+            
+            # Pas de bet à affronter = on ne peut pas check-raise
+            if state.amount_to_call <= 0:
+                cr_signal *= 0.3  # Réduire si personne n'a bet
+        
+        features.append(max(0.0, min(1.0, cr_signal)))
+        
+        # Equity Denial
+        # Gain estimé en faisant folder les draws adverses.
+        # Plus il y a de draws possibles ET que notre main est vulnérable,
+        # plus la valeur de deny l'equity est élevée.
+        # Score = 0 : aucun intérêt à deny equity (nuts ou air)
+        # Score = 1 : très profitable de faire folder les draws
+        eq_denial = 0.0
+        
+        if len(state.board) >= 3 and state.street != 'river':  # Pas de denial à la river
+            hand_strength_ed = self._evaluate_hand_strength(state.hole_cards, state.board)
+            board_tex_ed = self._analyze_board_texture(state.board)
+            
+            # Seules les mains moyennes-fortes bénéficient de l'equity denial
+            # (air n'a rien à protéger, nuts veut du value)
+            if 0.45 <= hand_strength_ed <= 0.85:
+                # Base : proportionnelle à la force de main
+                base_denial = hand_strength_ed * 0.8
+                
+                # Amplification par la dangerosité du board
+                # Board wet = beaucoup de draws adverses = forte valeur de denial
+                wet_ed = board_tex_ed.get('wet', 0)
+                coord_ed = board_tex_ed.get('coordinated', 0)
+                draw_density = wet_ed * 0.5 + coord_ed * 0.3
+                
+                # Flush draws on board = plus de denial value
+                suit_counts_ed = {}
+                for c in state.board:
+                    s = self._get_suit_char(c)
+                    suit_counts_ed[s] = suit_counts_ed.get(s, 0) + 1
+                if 2 in suit_counts_ed.values():
+                    draw_density += 0.15  # Flush draw possible
+                
+                eq_denial = base_denial * (1.0 + draw_density)
+                
+                # Nombre d'adversaires : plus ils sont nombreux, plus la denial est importante
+                eq_denial *= (1.0 + 0.1 * max(0, state.num_active_players - 2))
+        
+        features.append(max(0.0, min(1.0, eq_denial)))
+        
+        return features  # 32 features
     
     # ═══════════════════════════════════════════════════════════
     # MÉTHODES UTILITAIRES
@@ -681,8 +1054,7 @@ class FeatureExtractor:
             hand_ints = [Card.new(c) for c in hand_norm]
             board_ints = [Card.new(c) for c in board_norm]
             
-            evaluator = Evaluator()
-            score = evaluator.evaluate(board_ints, hand_ints)
+            score = self.evaluator.evaluate(board_ints, hand_ints)
             
             # Normalisation : score treys ∈ [1, 7462]
             # 1 = Royal Flush, 7462 = 7-high
@@ -905,83 +1277,233 @@ class FeatureExtractor:
         }
     
     def _estimate_fold_equity(self, state: GameState) -> float:
-        """Estime la fold equity d'une relance."""
-        # Simplifié: basé sur aggression déjà montrée et pot odds offerts
-        aggression = sum(1 for a in state.actions_this_street if any(x in a.lower() for x in ['bet', 'raise']))
+        """Estime la fold equity d'une relance (5 facteurs)."""
+        # 1. Base inversement proportionnelle à l'aggression déjà montrée
+        #    0.6 = ~60% fold frequency HU face à un c-bet standard (GTO baseline)
+        #    -0.15 par raise = chaque relance réduit la fold freq de ~15%
+        aggression = sum(1 for a in state.actions_this_street 
+                         if any(x in a.lower() for x in ['bet', 'raise']))
+        base = max(0.0, 0.6 - aggression * 0.15)
         
-        # Plus il y a eu d'aggression, moins on a de fold equity
-        base_fold_equity = 0.5 - (aggression * 0.1)
+        # 2. Position (IP = +10% fold equity, adversaire respecte plus)
+        position_bonus = 0.1 if state.position in ['BTN', 'CO'] else 0.0
         
-        # Ajustement selon les pot odds (moins on donne de cote, plus on a de fold equity)
-        if state.pot_odds < 0.25:
-            base_fold_equity += 0.2
+        # 3. Board texture (board sec = +10% max, vilain miss plus souvent)
+        texture = self._analyze_board_texture(state.board)
+        dry_bonus = 0.1 * (1.0 - texture['wet']) if state.board else 0.05
         
-        return min(max(base_fold_equity, 0.0), 1.0)
+        # 4. Multiway penalty (-5% par joueur additionnel au-delà du HU)
+        multiway_penalty = 0.05 * max(0, state.num_active_players - 2)
+        
+        # 5. Sizing : gros bet = plus de pression (+10% par 1x pot, cap +15%)
+        last_agg = state.get_last_aggression_amount()
+        if last_agg > 0 and state.pot_size > 0:
+            sizing_ratio = last_agg / state.pot_size
+            sizing_bonus = min(0.15, sizing_ratio * 0.1)
+        else:
+            sizing_bonus = 0.0
+        
+        fold_eq = base + position_bonus + dry_bonus + sizing_bonus - multiway_penalty
+        return max(0.0, min(1.0, fold_eq))
     
     def _calculate_implied_odds(self, state: GameState, equity: float) -> float:
-        """Calcule les implied odds."""
-        # Si on a de l'equity et du stack derrière, on a des implied odds
-        if equity > 0.3 and state.effective_stack_bb > 20:
-            return min((state.effective_stack_bb - 20) / 100.0, 1.0)
-        return 0.0
+        """Calcule les implied odds (3 facteurs continus)."""
+        # Factor 1: Stack depth (normalisé à 100BB, clampé à 1.0)
+        stack_factor = min(state.effective_stack_bb / 100.0, 1.0)
+        
+        # Factor 2: Draw quality (triangle : pic à equity=0.5, zéro aux extrêmes)
+        if equity <= 0.15 or equity >= 0.75:
+            draw_factor = 0.0  # Trop faible ou déjà fait
+        elif equity < 0.5:
+            draw_factor = equity * 2  # 0.15→0.3, 0.5→1.0
+        else:
+            draw_factor = (1.0 - equity) * 2  # 0.5→1.0, 0.75→0.5
+        
+        # Factor 3: Streets restantes (flop=max, river=0 par définition)
+        street_mult = {'preflop': 0.8, 'flop': 1.0, 'turn': 0.6, 'river': 0.0}
+        street_factor = street_mult.get(state.street, 0.5)
+        
+        implied = stack_factor * draw_factor * street_factor
+        return max(0.0, min(1.0, implied))
     
     def _calculate_reverse_implied_odds(self, state: GameState, equity: float) -> float:
-        """Calcule les reverse implied odds."""
-        # Si on a une main moyenne sur un board dangereux
+        """Calcule les reverse implied odds (gradient continu [0, 1])."""
         texture = self._analyze_board_texture(state.board)
-        if 0.3 < equity < 0.7 and (texture['wet'] or texture['coordinated']):
-            return 0.5
-        return 0.0
+        
+        # Mains moyennes = risque maximal de reverse implied odds
+        if equity <= 0.3 or equity >= 0.7:
+            return 0.0
+        
+        # Plus l'equity est proche de 0.5, plus le risque est élevé
+        strength_risk = 1.0 - abs(equity - 0.5) * 4  # Max à equity=0.5, 0 aux bords
+        strength_risk = max(0.0, strength_risk)
+        
+        # Board dangereux amplifie le risque
+        board_danger = (texture['wet'] * 0.4 + texture['coordinated'] * 0.3 
+                        + texture['monotone'] * 0.3)
+        
+        # Plus il reste de streets, plus le risque est élevé
+        street_mult = {'preflop': 0.3, 'flop': 1.0, 'turn': 0.7, 'river': 0.2}
+        street_factor = street_mult.get(state.street, 0.5)
+        
+        risk = strength_risk * board_danger * street_factor
+        return max(0.0, min(1.0, risk))
     
     def _estimate_range_advantage(self, state: GameState) -> Dict[str, float]:
-        """Estime l'avantage de range."""
-        # Simplifié: basé sur position et actions
+        """Estime l'avantage de range (board-aware)."""
         in_position = state.position in ['BTN', 'CO']
         facing_aggression = state.amount_to_call > 0
+        texture = self._analyze_board_texture(state.board)
+        equity = self._estimate_equity(state.hole_cards, state.board, state.num_active_players)
         
+        # Base selon position/aggression
         if in_position and not facing_aggression:
-            return {'nutted': 0.3, 'medium': 0.5, 'weak': 0.2}
+            nutted, medium, weak = 0.3, 0.5, 0.2
         elif facing_aggression:
-            return {'nutted': 0.5, 'medium': 0.3, 'weak': 0.2}
+            nutted, medium, weak = 0.4, 0.3, 0.3
         else:
-            return {'nutted': 0.2, 'medium': 0.5, 'weak': 0.3}
+            nutted, medium, weak = 0.2, 0.5, 0.3
+        
+        # Board de high cards favorise le raiser IP (+15% nutted)
+        if texture['high_cards'] > 0.5:
+            if in_position:
+                nutted += 0.15; weak -= 0.15
+            else:
+                nutted -= 0.1; weak += 0.1
+        
+        # Board coordonné favorise le caller OOP (+10% medium)
+        if texture['coordinated']:
+            if not in_position:
+                medium += 0.1; weak -= 0.1
+        
+        # Equity réelle ajuste la distribution
+        if equity > 0.7:
+            nutted += 0.2; weak -= 0.2
+        elif equity < 0.3:
+            nutted -= 0.1; weak += 0.1
+        
+        # Normalisation (somme = 1)
+        total = max(nutted + medium + weak, 0.01)
+        return {
+            'nutted': max(0.0, min(1.0, nutted / total)),
+            'medium': max(0.0, min(1.0, medium / total)),
+            'weak': max(0.0, min(1.0, weak / total))
+        }
     
     def _estimate_board_coverage(self, state: GameState) -> Dict[str, float]:
-        """Estime la couverture du board par notre range."""
+        """Estime la couverture du board par notre range (main-aware)."""
         texture = self._analyze_board_texture(state.board)
+        equity = self._estimate_equity(state.hole_cards, state.board, state.num_active_players)
         
+        # Base selon texture
         if texture['high_cards'] > 0.6:
-            return {'high': 0.7, 'medium': 0.2, 'low': 0.1}
+            high, medium, low = 0.6, 0.3, 0.1
         elif texture['coordinated']:
-            return {'high': 0.3, 'medium': 0.5, 'low': 0.2}
+            high, medium, low = 0.3, 0.5, 0.2
         else:
-            return {'high': 0.4, 'medium': 0.4, 'low': 0.2}
+            high, medium, low = 0.4, 0.4, 0.2
+        
+        # Equity réelle : notre main couvre-t-elle bien ce board ?
+        if equity > 0.65:
+            high += 0.2; low -= 0.1; medium -= 0.1
+        elif equity > 0.45:
+            medium += 0.15; high -= 0.05; low -= 0.1
+        elif equity < 0.3:
+            low += 0.2; high -= 0.1; medium -= 0.1
+        
+        # Draws améliorent la couverture medium (+10%)
+        flush_m, flush_d = self._check_flush(state.hole_cards, state.board)
+        straight_m, straight_d = self._check_straight(state.hole_cards, state.board)
+        if flush_d or straight_d:
+            medium += 0.1; low -= 0.1
+        
+        # Normalisation (somme = 1)
+        total = max(high + medium + low, 0.01)
+        return {
+            'high': max(0.0, min(1.0, high / total)),
+            'medium': max(0.0, min(1.0, medium / total)),
+            'low': max(0.0, min(1.0, low / total))
+        }
     
     def _estimate_polarization(self, state: GameState) -> Dict[str, float]:
-        """Estime la polarisation de notre range."""
+        """Estime la polarisation de notre range (sizing-aware)."""
         aggression = sum(1 for a in state.actions_this_street if 'raise' in a.lower())
         
-        if aggression >= 2:
-            return {'polarized': 0.7, 'merged': 0.2, 'capped': 0.1}
-        elif aggression == 1:
-            return {'polarized': 0.3, 'merged': 0.6, 'capped': 0.1}
+        # Sizing analysis : normalisé par 1.5x pot (seuil de polarisation GTO)
+        last_agg = state.get_last_aggression_amount()
+        if last_agg > 0 and state.pot_size > 0:
+            sizing_ratio = last_agg / state.pot_size
+            sizing_signal = min(sizing_ratio / 1.5, 1.0)
         else:
-            return {'polarized': 0.1, 'merged': 0.5, 'capped': 0.4}
+            sizing_signal = 0.0
+        
+        # Base selon aggression count
+        if aggression >= 2:
+            polarized, merged, capped = 0.6, 0.2, 0.2
+        elif aggression == 1:
+            polarized, merged, capped = 0.3, 0.5, 0.2
+        else:
+            polarized, merged, capped = 0.1, 0.4, 0.5
+        
+        # Sizing shift : gros sizing → +polarisé, -merged
+        polarized += sizing_signal * 0.2
+        merged -= sizing_signal * 0.15
+        capped -= sizing_signal * 0.05
+        
+        # OOP passif → +capped (check-call = pas de nuts)
+        if state.position not in ['BTN', 'CO'] and aggression == 0:
+            capped += 0.1; polarized -= 0.1
+        
+        # Normalisation (somme = 1)
+        total = max(polarized + merged + capped, 0.01)
+        return {
+            'polarized': max(0.0, min(1.0, polarized / total)),
+            'merged': max(0.0, min(1.0, merged / total)),
+            'capped': max(0.0, min(1.0, capped / total))
+        }
     
     def _analyze_betting_patterns(self, state: GameState) -> Dict[str, float]:
-        """Analyse les patterns de mise."""
+        """Analyse les patterns de mise (ratios continus)."""
         actions = state.actions_this_street
+        n = max(len(actions), 1)
         
         num_bets = sum(1 for a in actions if 'bet' in a.lower())
         num_raises = sum(1 for a in actions if 'raise' in a.lower())
+        num_calls = sum(1 for a in actions if 'call' in a.lower())
+        num_checks = sum(1 for a in actions if 'check' in a.lower())
         
-        # Patterns simplifiés
-        if num_raises >= 2:
-            return {'value': 0.6, 'bluff': 0.2, 'balanced': 0.1, 'exploitative': 0.1}
-        elif num_bets + num_raises == 1:
-            return {'value': 0.4, 'bluff': 0.3, 'balanced': 0.2, 'exploitative': 0.1}
+        aggressive = num_bets + num_raises
+        passive = num_calls + num_checks
+        
+        # Value : ratio agressif (floor 20%, scale 80%)
+        value = aggressive / n * 0.8 + 0.2
+        
+        # Bluff : overbet signal (floor 20%, gros sizing → +30% max)
+        last_agg = state.get_last_aggression_amount()
+        if last_agg > 0 and state.pot_size > 0:
+            overbet_signal = min(last_agg / state.pot_size, 2.0) / 2.0
+            bluff = 0.2 + overbet_signal * 0.3
         else:
-            return {'value': 0.3, 'bluff': 0.2, 'balanced': 0.3, 'exploitative': 0.2}
+            bluff = 0.2 + passive / n * 0.1
+        
+        # Balanced : mix agressif/passif (floor 10%, scale 40%)
+        if n > 1:
+            balance_ratio = 1.0 - abs(aggressive - passive) / n
+        else:
+            balance_ratio = 0.5
+        balanced = 0.1 + balance_ratio * 0.4
+        
+        # Exploitative : pattern unilatéral (floor 10%, scale 50%)
+        exploitative = abs(aggressive - passive) / n * 0.5 + 0.1
+        
+        # Normalisation (somme = 1)
+        total = max(value + bluff + balanced + exploitative, 0.01)
+        return {
+            'value': max(0.0, min(1.0, value / total)),
+            'bluff': max(0.0, min(1.0, bluff / total)),
+            'balanced': max(0.0, min(1.0, balanced / total)),
+            'exploitative': max(0.0, min(1.0, exploitative / total))
+        }
     
     def _generate_feature_names(self) -> List[str]:
         """Génère les noms de toutes les features."""
@@ -1026,15 +1548,199 @@ class FeatureExtractor:
             'players_2', 'players_3', 'players_4', 'players_5', 'players_6', 'players_6plus'
         ])
         
-        # Théorie du jeu (20)
+        # Théorie du jeu (32)
         names.extend([
             'ev_call', 'ev_fold', 'ev_raise', 'fold_equity',
             'implied_odds', 'reverse_implied_odds', 'commitment_level',
             'range_nutted', 'range_medium', 'range_weak',
             'board_coverage_high', 'board_coverage_medium', 'board_coverage_low',
             'polarized', 'merged', 'capped',
-            'pattern_value', 'pattern_bluff', 'pattern_balanced', 'pattern_exploitative'
+            'pattern_value', 'pattern_bluff', 'pattern_balanced', 'pattern_exploitative',
+            'mdf', 'alpha', 'bet_to_pot_ratio', 'pot_geometry',
+            'equity_realization', 'blocker_effects', 'protection_need',
+            'nut_advantage', 'leverage', 'effective_spr',
+            'check_raise_signal', 'equity_denial'
         ])
+        
+        return names
+    
+    def get_feature_names(self) -> List[str]:
+        """Retourne les noms de toutes les features."""
+        return self.feature_names.copy()
+
+
+
+
+
+
+
+
+
+class FeatureExtractor_v2(CardFeatures, SimpleFeature, GameTheoryFeatures):
+
+    PREMIUM_HANDS = {'AA', 'KK', 'QQ', 'JJ', 'AKs'}
+    STRONG_HANDS = {'TT', '99', '88', 'AQs', 'AJs', 'KQs', 'AKo', 'AQo'}
+
+
+    def __init__(self, use_one_hot: bool = True):
+        self.evaluator = Evaluator()
+        self.use_one_hot = use_one_hot
+        self.NUM_FEATURES = 203 if use_one_hot else 99
+        
+        CardFeatures.__init__(self, self.PREMIUM_HANDS, self.STRONG_HANDS, self.evaluator)
+        GameTheoryFeatures.__init__(self, self.PREMIUM_HANDS, self.STRONG_HANDS, self.evaluator)
+
+        self.feature_names = self._generate_feature_names()
+        logger.info(f"FeatureExtractor_v2 initialisé avec {self.NUM_FEATURES} features")
+
+    def _extract_one_hot_cards(self, state: GameState, out: np.ndarray, idx: int) -> int:
+        """
+        Encode les cartes du joueur (52 bits) et du board (52 bits) en One-Hot.
+        """
+        ranks = {'2': 0, '3': 1, '4': 2, '5': 3, '6': 4, '7': 5, '8': 6, '9': 7,
+                 'T': 8, 'J': 9, 'Q': 10, 'K': 11, 'A': 12}
+        suits = {'s': 0, 'h': 1, 'd': 2, 'c': 3}
+        
+        # Hole cards
+        for card in state.hole_cards:
+            r = self._get_rank_char(card)
+            s = self._get_suit_char(card)
+            if r in ranks and s in suits:
+                card_idx = suits[s] * 13 + ranks[r]
+                out[idx + card_idx] = 1.0
+                
+        idx += 52
+        
+        # Board cards
+        for card in state.board:
+            r = self._get_rank_char(card)
+            s = self._get_suit_char(card)
+            if r in ranks and s in suits:
+                card_idx = suits[s] * 13 + ranks[r]
+                out[idx + card_idx] = 1.0
+                
+        idx += 52
+        
+        return idx
+
+    def extract(self, state: GameState) -> np.ndarray:
+        """
+        Extrait toutes les features d'un GameState de façon optimisée.
+        
+        Args:
+            state: GameState standardisé
+        
+        Returns:
+            np.ndarray de shape (99,) avec toutes les features
+        """
+        # Pré-allocation pure Numpy, ultra rapide
+        features_array = np.zeros(self.NUM_FEATURES, dtype=np.float32)
+        idx = 0
+        
+        # 1. Features de cartes (22)
+        idx = self._extract_card_features(state, features_array, idx)
+        
+        # 2. Features de position (6)
+        idx = self._extract_position_features(state, features_array, idx)
+        
+        # 3. Features de stack & pot (12)
+        idx = self._extract_stack_pot_features(state, features_array, idx)
+        
+        # 4. Features d'actions (15)
+        idx = self._extract_action_features(state, features_array, idx)
+        
+        # 5. Features de contexte (12)
+        idx = self._extract_context_features(state, features_array, idx)
+        
+        # 6. Features de théorie du jeu (32)
+        idx = self._extract_game_theory_features(state, features_array, idx)
+        
+        # 7. One-Hot Encoding des Cartes (104)
+        if self.use_one_hot:
+            idx = self._extract_one_hot_cards(state, features_array, idx)
+        
+        # Validation super rapide
+        if idx != self.NUM_FEATURES:
+            logger.error(
+                f"Nombre de features incorrect après parsing: {idx} != {self.NUM_FEATURES}"
+            )
+            raise ValueError(f"Expected {self.NUM_FEATURES} features, got {idx}")
+        
+        return features_array
+    
+    def _generate_feature_names(self) -> List[str]:
+        """Génère la liste des noms de toutes les features."""
+        names = []
+        
+        # Cartes (22)
+        names.extend([
+            'card_rank_1', 'card_rank_2',
+            'suited', 'pocket_pair',
+            'hand_strength_preflop_premium', 'hand_strength_preflop_strong',
+            'hand_strength_postflop', 'equity_estimated',
+            'flush_draw_made', 'flush_draw_draw',
+            'straight_draw_made', 'straight_draw_draw',
+            'overcards_to_board',
+            'pair_on_board', 'two_pair_on_board', 'trips_on_board', 'quads_on_board',
+            'board_coordinated', 'board_wet', 'board_paired', 'board_high_cards', 'board_monotone'
+        ])
+        
+        # Position (6)
+        names.extend([
+            'position_normalized', 'distance_to_button', 'in_position',
+            'position_early', 'position_middle', 'position_late'
+        ])
+        
+        # Stack & Pot (12)
+        names.extend([
+            'effective_stack_bb', 'pot_size_bb', 'spr',
+            'pot_odds', 'amount_to_call_bb', 'all_in_situation',
+            'stack_short', 'stack_medium', 'stack_deep',
+            'spr_low', 'spr_medium', 'spr_high'
+        ])
+        
+        # Actions (15)
+        names.extend([
+            'num_actions', 'aggression_factor',
+            'num_folds', 'num_calls', 'num_raises', 'num_checks', 'num_bets', 'num_allin',
+            'last_action_aggressive', 'last_aggression_amount', 'facing_aggression',
+            'can_fold', 'can_check_call', 'can_raise', 'can_allin'
+        ])
+        
+        # Contexte (12)
+        names.extend([
+            'num_active_players',
+            'street_preflop', 'street_flop', 'street_turn', 'street_river',
+            'bb_sb_ratio',
+            'is_single_raised_pot', 'is_3bet_pot', 'was_multiway_flop', 'players_2', 'players_3_to_4', 'players_5_plus'
+        ])
+        
+        # Théorie du jeu (32)
+        names.extend([
+            'ev_call', 'ev_fold', 'ev_raise', 'fold_equity',
+            'implied_odds', 'reverse_implied_odds', 'commitment_level',
+            'range_nutted', 'range_medium', 'range_weak',
+            'board_coverage_high', 'board_coverage_medium', 'board_coverage_low',
+            'polarized', 'merged', 'capped',
+            'pattern_value', 'pattern_bluff', 'pattern_balanced', 'pattern_exploitative',
+            'mdf', 'alpha', 'bet_to_pot_ratio', 'pot_geometry',
+            'equity_realization', 'blocker_effects', 'protection_need',
+            'nut_advantage', 'leverage', 'effective_spr',
+            'check_raise_signal', 'equity_denial'
+        ])
+        
+        # One-Hot Cards (104)
+        if getattr(self, 'use_one_hot', True):
+            ranks_order = ['2', '3', '4', '5', '6', '7', '8', '9', 'T', 'J', 'Q', 'K', 'A']
+            suits_order = ['s', 'h', 'd', 'c']
+            
+            for s in suits_order:
+                for r in ranks_order:
+                    names.append(f'hole_{r}{s}')
+                    
+            for s in suits_order:
+                for r in ranks_order:
+                    names.append(f'board_{r}{s}')
         
         return names
     
@@ -1076,7 +1782,7 @@ if __name__ == '__main__':
     print(f"  Nombre de features: {len(features1)}")
     print(f"  Min/Max: [{features1.min():.3f}, {features1.max():.3f}]")
     print(f"  Premières features: {features1[:10]}")
-    assert len(features1) == 87
+    assert len(features1) == 99
     print("  ✅ PASS")
     
     # Test 2: Postflop avec flush draw
@@ -1085,7 +1791,7 @@ if __name__ == '__main__':
         board=['Kh', '9c', '4h'],
         street='flop',
         position='CO',
-        num_active_players=2,
+        num_active_players=2, 
         pot_size=500,
         stack=8500,
         big_blind=100,
@@ -1110,7 +1816,7 @@ if __name__ == '__main__':
     print(f"  Nombre de noms: {len(names)}")
     print(f"  Premiers noms: {names[:5]}")
     print(f"  Derniers noms: {names[-5:]}")
-    assert len(names) == 87
+    assert len(names) == 99
     print("  ✅ PASS")
     
     print("\n" + "=" * 70)

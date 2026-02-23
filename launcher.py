@@ -8,7 +8,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# --- CONFIG ---
+
 AWS_REGION = os.getenv("AWS_REGION")
 AMI_ID = os.getenv("AMI_ID")
 INSTANCE_TYPE = os.getenv("INSTANCE_TYPE")
@@ -31,7 +31,6 @@ def background_sync_task(ip_address, key_path, remote_dir, local_path, stop_even
 
     while not stop_event.is_set():
         try:
-            # 1. Modèles : On ignore ceux qu'on a déjà (--ignore-existing)
             subprocess.run([
                 "rsync", "-az", "--ignore-existing", 
                 "-e", f"ssh -i {key_path} -o StrictHostKeyChecking=no -o ConnectTimeout=10",
@@ -39,7 +38,6 @@ def background_sync_task(ip_address, key_path, remote_dir, local_path, stop_even
                 os.path.join(local_path, "models")
             ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            # 2. Logs : Idem
             subprocess.run([
                 "rsync", "-az", "--ignore-existing",
                 "-e", f"ssh -i {key_path} -o StrictHostKeyChecking=no -o ConnectTimeout=10",
@@ -49,11 +47,19 @@ def background_sync_task(ip_address, key_path, remote_dir, local_path, stop_even
         except:
             pass
         
-        # Pause de 5 minutes (300s)
         if stop_event.wait(300):
             break
 
+import argparse
+
 def main():
+    parser = argparse.ArgumentParser(description="Lance l'entraînement de Poker sur AWS EC2")
+    parser.add_argument("--script", type=str, default="trainer_sb3_self-play", 
+                        help="Nom du script à lancer dans le dossier training (ex: trainer_sb3 ou trainer_sb3_self-play)")
+    args = parser.parse_args()
+
+    script_name = args.script.replace('.py', '')
+
     if not os.path.exists("requirements.txt"):
         print(f"❌ ERREUR : Pas de requirements.txt ici.")
         return
@@ -65,7 +71,6 @@ def main():
     stop_sync_event = threading.Event()
 
     try:
-        # --- 1. SETUP ---
         try:
             sg = ec2_client.describe_security_groups(GroupNames=["Poker-SSH-Access"])['SecurityGroups'][0]
             sg_id = sg['GroupId']
@@ -77,11 +82,10 @@ def main():
         
         print(f"🚀 Lancement sur {INSTANCE_TYPE}...")
 
-        # --- 2. LANCEMENT INSTANCE ---
         instances = ec2.create_instances(
             ImageId=AMI_ID, InstanceType=INSTANCE_TYPE, KeyName=KEY_NAME, MinCount=1, MaxCount=1,
             BlockDeviceMappings=[{'DeviceName': '/dev/sda1', 'Ebs': {'VolumeSize': 50, 'VolumeType': 'gp3', 'DeleteOnTermination': True}}],
-            # InstanceMarketOptions={'MarketType': 'spot', 'SpotOptions': {'SpotInstanceType': 'one-time'}}, 
+            InstanceMarketOptions={'MarketType': 'spot', 'SpotOptions': {'SpotInstanceType': 'one-time'}}, 
             SecurityGroupIds=[sg_id],
             TagSpecifications=[{'ResourceType': 'instance', 'Tags': [{'Key': 'Name', 'Value': 'Poker-Bot-Prod'}]}]
         )
@@ -95,7 +99,6 @@ def main():
         time.sleep(30)
         conn = Connection(host=ip_address, user="ubuntu", connect_kwargs={"key_filename": KEY_PATH})
 
-        # --- 3. ENVOI FICHIERS ---
         print("📂 Envoi du code...")
         subprocess.run([
             "rsync", "-az",
@@ -105,13 +108,12 @@ def main():
             f"ubuntu@{ip_address}:{REMOTE_DIR}"
         ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
 
-        # --- 4. INSTALLATION ---
         print("🛠️ Installation silencieuse...")
-        conn.run("sudo apt update -qq && sudo apt install python3-pip python3-venv -y -qq", hide=True)
-        conn.run(f"cd {REMOTE_DIR} && python3 -m venv venv")
-        conn.run(f"cd {REMOTE_DIR} && source venv/bin/activate && pip install -q -r requirements.txt && pip install -q tqdm rich")
+        conn.run("sudo apt update -qq && sudo apt install python3-pip python3-venv -y -qq", hide=True, timeout=120)
+        conn.run(f"cd {REMOTE_DIR} && python3 -m venv venv", timeout=60)
+        conn.run(f"cd {REMOTE_DIR} && source venv/bin/activate && pip install --no-cache-dir -q torch --index-url https://download.pytorch.org/whl/cpu", timeout=600)
+        conn.run(f"cd {REMOTE_DIR} && source venv/bin/activate && pip install --no-cache-dir -q -r requirements.txt && pip install -q tqdm rich", timeout=600)
 
-        # --- 5. LANCEMENT SYNC ---
         sync_thread = threading.Thread(
             target=background_sync_task,
             args=(ip_address, KEY_PATH, REMOTE_DIR, LOCAL_DOWNLOAD_PATH, stop_sync_event),
@@ -119,10 +121,14 @@ def main():
         )
         sync_thread.start()
 
-        # --- 6. ENTRAÎNEMENT ---
-        print("🔥 Lancement Entraînement...")
-        # log_interval=1000 doit être réglé dans trainer_sb3.py pour réduire l'affichage des stats
-        conn.run(f"cd {REMOTE_DIR} && source venv/bin/activate && python -m training.trainer_sb3", pty=True)
+        wandb_key = os.getenv("WANDB_API_KEY")
+        if wandb_key:
+            train_cmd = f"export WANDB_API_KEY={wandb_key} && python -m training.{script_name}"
+        else:
+            train_cmd = f"python -m training.{script_name}"
+
+        print(f"🔥 Lancement Entraînement ({script_name}.py)...")
+        conn.run(f"cd {REMOTE_DIR} && source venv/bin/activate && {train_cmd}", pty=True)
 
     except KeyboardInterrupt:
         print("\n🛑 ARRÊT MANUEL (Ctrl+C)")
@@ -136,7 +142,6 @@ def main():
         
         if ip_address:
             try:
-                # Dernière récup (avec ignore-existing aussi)
                 subprocess.run(["rsync", "-az", "--ignore-existing", "-e", f"ssh -i {KEY_PATH} -o StrictHostKeyChecking=no", f"ubuntu@{ip_address}:{REMOTE_DIR}/models/", os.path.join(LOCAL_DOWNLOAD_PATH, "models")], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=30)
             except: pass
 

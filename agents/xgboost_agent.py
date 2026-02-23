@@ -75,6 +75,18 @@ class XGBoostRLCardAgent:
 
         self.env = env
         
+        # Auto-détection de la dimension attendue par le modèle
+        try:
+            self.model_input_dim = self.model.num_features()
+        except Exception:
+            self.model_input_dim = None  # Pas dispo → pas de truncation
+        
+        self.current_features_dim = FeatureExtractor.NUM_FEATURES
+        
+        if self.model_input_dim and self.model_input_dim != self.current_features_dim:
+            print(f"⚠️ XGBoost: modèle attend {self.model_input_dim} features, "
+                  f"pipeline produit {self.current_features_dim}. Adaptation automatique.")
+        
         # Stats
         self.stats = {
             'total_decisions': 0,
@@ -105,6 +117,9 @@ class XGBoostRLCardAgent:
             
             # === 3. GameState → Features ===
             X = self.extractor.extract(game_state)
+            # Compatibilité : tronquer si le modèle attend moins de features
+            if self.model_input_dim and self.model_input_dim < len(X):
+                X = X[:self.model_input_dim]
             X_dmatrix = xgb.DMatrix(X.reshape(1, -1))
             
             # === 4. Prédiction ===
@@ -222,7 +237,9 @@ class XGBoostRLCardAgent:
             
             # === 2. GameState → Features ===
             X = self.extractor.extract(game_state)
-
+            # Compatibilité : tronquer si le modèle attend moins de features
+            if self.model_input_dim and self.model_input_dim < len(X):
+                X = X[:self.model_input_dim]
             X_dmatrix = xgb.DMatrix(X.reshape(1, -1))
             
             # === 3. Prédiction XGBoost ===

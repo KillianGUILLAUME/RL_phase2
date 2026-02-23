@@ -1,0 +1,33 @@
+\babel@toc {english}{}\relax 
+\contentsline {section}{\numberline {1}Notation and Conventions}{3}{section.1}%
+\contentsline {section}{\numberline {2}Expected Value Estimations (Features 0--2)}{3}{section.2}%
+\contentsline {subsection}{\numberline {2.1}EV Call (Feature 0)}{3}{subsection.2.1}%
+\contentsline {subsection}{\numberline {2.2}EV Fold (Feature 1)}{4}{subsection.2.2}%
+\contentsline {subsection}{\numberline {2.3}EV Raise (Feature 2)}{4}{subsection.2.3}%
+\contentsline {section}{\numberline {3}Fold Equity and Odds (Features 3--6)}{4}{section.3}%
+\contentsline {subsection}{\numberline {3.1}Fold Equity (Feature 3)}{4}{subsection.3.1}%
+\contentsline {subsection}{\numberline {3.2}Implied Odds (Feature 4)}{5}{subsection.3.2}%
+\contentsline {subsection}{\numberline {3.3}Reverse Implied Odds (Feature 5)}{5}{subsection.3.3}%
+\contentsline {subsection}{\numberline {3.4}Commitment Level (Feature 6)}{6}{subsection.3.4}%
+\contentsline {section}{\numberline {4}Range Analysis (Features 7--15)}{6}{section.4}%
+\contentsline {subsection}{\numberline {4.1}Range Advantage (Features 7--9)}{6}{subsection.4.1}%
+\contentsline {subsection}{\numberline {4.2}Board Coverage (Features 10--12)}{6}{subsection.4.2}%
+\contentsline {subsection}{\numberline {4.3}Polarization (Features 13--15)}{7}{subsection.4.3}%
+\contentsline {section}{\numberline {5}Betting Pattern Analysis (Features 16--19)}{7}{section.5}%
+\contentsline {section}{\numberline {6}GTO Fundamentals (Features 20--23)}{8}{section.6}%
+\contentsline {subsection}{\numberline {6.1}Minimum Defense Frequency (Feature 20)}{8}{subsection.6.1}%
+\contentsline {subsection}{\numberline {6.2}Alpha --- Bluff Breakeven Threshold (Feature 21)}{9}{subsection.6.2}%
+\contentsline {subsection}{\numberline {6.3}Bet-to-Pot Ratio (Feature 22)}{9}{subsection.6.3}%
+\contentsline {subsection}{\numberline {6.4}Pot Geometry (Feature 23)}{10}{subsection.6.4}%
+\contentsline {section}{\numberline {7}Tier 1: Advanced GTO Features (Features 24--26)}{11}{section.7}%
+\contentsline {subsection}{\numberline {7.1}Equity Realization (Feature 24)}{11}{subsection.7.1}%
+\contentsline {subsection}{\numberline {7.2}Blocker Effects (Feature 25)}{12}{subsection.7.2}%
+\contentsline {subsection}{\numberline {7.3}Protection Need (Feature 26)}{12}{subsection.7.3}%
+\contentsline {section}{\numberline {8}Tier 2: Strategic Features (Features 27--29)}{13}{section.8}%
+\contentsline {subsection}{\numberline {8.1}Nut Advantage (Feature 27)}{13}{subsection.8.1}%
+\contentsline {subsection}{\numberline {8.2}Leverage (Feature 28)}{14}{subsection.8.2}%
+\contentsline {subsection}{\numberline {8.3}Effective SPR (Feature 29)}{14}{subsection.8.3}%
+\contentsline {section}{\numberline {9}Tier 3: Tactical Features (Features 30--31)}{15}{section.9}%
+\contentsline {subsection}{\numberline {9.1}Check-Raise Signal (Feature 30)}{15}{subsection.9.1}%
+\contentsline {subsection}{\numberline {9.2}Equity Denial (Feature 31)}{16}{subsection.9.2}%
+\contentsline {section}{\numberline {10}Summary and Feature Vector Structure}{17}{section.10}%

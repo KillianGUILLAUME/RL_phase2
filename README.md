@@ -15,7 +15,7 @@
 
 ---
 
-## ⚠️ **Avertissement Éthique & Usage Responsable**
+## **Avertissement Éthique & Usage Responsable**
 
 > [!CAUTION]
 > **Ce projet est STRICTEMENT réservé à la recherche académique en intelligence artificielle et théorie des jeux.**
@@ -23,16 +23,16 @@
 
 Ce projet est destiné **exclusivement** à la recherche en intelligence artificielle, théorie des jeux et mathématiques appliquées.
 
-### 🚫 Usages interdits
+### Usages interdits
 
 | Usage | Statut |
 |---|---|
-| Triche ou aide en temps réel sur des sites de poker en ligne | **❌ INTERDIT** |
-| Exploitation commerciale (vente, SaaS, API payante) | **❌ INTERDIT** |
-| Contournement des CGU des plateformes de poker | **❌ INTERDIT** |
-| Développement de bots jouant avec de l'argent réel | **❌ INTERDIT** |
-| Recherche académique, éducation, expérimentation personnelle | ✅ Autorisé |
-| Publication scientifique (avec citation) | ✅ Autorisé |
+| Triche ou aide en temps réel sur des sites de poker en ligne | **INTERDIT** |
+| Exploitation commerciale (vente, SaaS, API payante) | **INTERDIT** |
+| Contournement des CGU des plateformes de poker | **INTERDIT** |
+| Développement de bots jouant avec de l'argent réel | **INTERDIT** |
+| Recherche académique, éducation, expérimentation personnelle | Autorisé |
+| Publication scientifique (avec citation) | Autorisé |
 
 ### ⚖️ Conformité légale
 
@@ -43,7 +43,7 @@ Ce projet est destiné **exclusivement** à la recherche en intelligence artific
 
 ---
 
-## 🙏 Remerciements
+## Remerciements
 
 Ce travail repose sur les contributions de la communauté scientifique et open-source :
 
@@ -59,7 +59,7 @@ Ce travail repose sur les contributions de la communauté scientifique et open-s
 
 ---
 
-## 📋 Table des matières
+## Table des matières
 
 - [Vue d'ensemble](#-vue-densemble)
 - [Architecture](#-architecture)
@@ -84,7 +84,7 @@ Ce travail repose sur les contributions de la communauté scientifique et open-s
 
 ---
 
-## 🎯 Vue d'ensemble
+## Vue d'ensemble
 
 **RL_phase2** est un framework de recherche combinant :
 - **Apprentissage par Renforcement** (DQN, MaskablePPO)
@@ -99,47 +99,49 @@ Données Pluribus (.phh)  ──►  XGBoost (Imitation Learning)  ──►  Ad
                                                                         │
 Environnement RLCard     ──►  DQN / MaskablePPO (RL)        ──►  Agent  │ vs
                                                                         │
-                              Feature Extractor (87 dims)    ◄──  GameState standardisé
+                              Feature Extractor (99 dims)    ◄──  GameState standardisé
 ```
 
-## 🏗 Architecture
+## Architecture
 
 ```
 RL_phase2/
-├── core/                    # 🔴 Noyau — Structures de données
+├── core/                    # Noyau — Structures de données
 │   └── game_state.py        #     GameState : état standardisé du jeu
 │
-├── agents/                  # 🟢 Agents IA
+├── agents/                  # Agents IA
 │   ├── dqn.py               #     SmartDQNAgent (RLCard + Features)
 │   ├── ppo.py               #     PPOAgent (Gym wrapper pour SB3)
 │   ├── xgboost_agent.py     #     XGBoostRLCardAgent (Pluribus-trained)
+│   ├── rule_agents.py       #     RuleBasedBot (V1) + AdvancedRuleBot (V2)
 │   ├── human_console.py     #     Agent humain (interface console)
 │   └── dqn_training.py      #     Script de lancement DQN
 │
-├── features/                # 🟡 Feature Engineering
-│   ├── feature_builder.py   #     FeatureExtractor (87 features)
+├── features/                # Feature Engineering
+│   ├── feature_builder.py   #     FeatureExtractor (99 features)
 │   └── feature_sota_drl.py  #     Features SOTA pour DRL
 │
-├── adapters/                # 🔵 Adaptateurs multi-sources
+├── adapters/                # Adaptateurs multi-sources
 │   ├── rlcard_adapter.py    #     RLCard → GameState
 │   └── pluribus_adapter.py  #     Pluribus (.phh) → GameState
 │
-├── training/                # 🟠 Infrastructure d'entraînement
+├── training/                # Infrastructure d'entraînement
 │   ├── config.py            #     Configurations type-safe (dataclasses)
 │   ├── trainer.py           #     PokerRLTrainer (agnostique)
 │   ├── trainer_sb3.py       #     Entraîneur MaskablePPO (SB3)
+│   ├── trainer_sb3_self-play.py #  Self-play avec curriculum (Rule V1→V2)
 │   ├── sb3wrapper.py        #     PokerSB3Wrapper (Gymnasium env)
 │   └── callbacks.py         #     Callbacks (Progress, Metrics, EarlyStopping, TensorBoard)
 │
-├── parsers/                 # 🟣 Parsing de données
+├── parsers/                 # Parsing de données
 │   ├── phh_parsers.py       #     Parser Pluribus Hand History (.phh)
 │   └── parse_data.py        #     Utilitaires de conversion
 │
-├── data/                    # 📦 Données
+├── data/                    # Données
 │   ├── script_pluribus.ipynb#     Notebook d'exploration Pluribus
 │   └── xgb_pluribus_v1.pkl  #     Modèle XGBoost pré-entraîné
 │
-├── tests/                   # 🧪 Tests & Benchmarks
+├── tests/                   # Tests & Benchmarks
 │   ├── test_agent.py        #     Tests des agents
 │   ├── test_feature_builder.py#   Tests du feature extractor
 │   ├── test_sb3_env.py      #     Tests de l'env Gymnasium
@@ -147,38 +149,39 @@ RL_phase2/
 │   ├── tournament.py        #     Tournoi XGBoost vs DQN
 │   └── explore_rlcard.py    #     Exploration de l'API RLCard
 │
-├── live_poker_pro.py        # 🎰 Assistant live (Rich UI)
-├── live_assistant.py        # 🎰 Assistant live (CLI)
-├── play_human.py            # 🕹️  Mode Humain vs IA
-├── plot_results.py          # 📊 Visualisation TensorBoard
-├── convert_to_json.py       # 🔄 Conversion modèle pkl → json
-└── requirements.txt         # 📋 Dépendances Python
+├── live_poker_pro.py        # Assistant live (Rich UI)
+├── live_assistant.py        # Assistant live (CLI)
+├── play_human.py            # Mode Humain vs IA
+├── plot_results.py          # Visualisation TensorBoard
+├── convert_to_json.py       # Conversion modèle pkl → json
+└── requirements.txt         # Dépendances Python
 ```
 
 ---
 
-## ✨ Fonctionnalités
+## Fonctionnalités
 
 | Fonctionnalité | Description | Status |
 |---|---|---|
-| 🧠 **SmartDQN** | Agent DQN avec features intelligentes (override de RLCard) | ✅ |
-| 🚀 **MaskablePPO** | PPO avec action masking via SB3-Contrib | ✅ |
-| 🌲 **XGBoost Agent** | Imitation learning à partir de Pluribus | ✅ |
-| 🎯 **87 Features** | Feature engineering avancé (cartes, position, GTO) | ✅ |
-| 🔄 **Adapters** | Support multi-source (RLCard + Pluribus .phh) | ✅ |
-| ⚙️ **Config system** | Configurations type-safe avec presets (quick, standard, Kaggle) | ✅ |
-| 📊 **TensorBoard** | Monitoring temps réel des métriques | ✅ |
-| 🎰 **Live Assistant** | Assistant poker en temps réel (Rich UI) | ✅ |
-| 🕹️ **Human vs AI** | Mode de jeu humain contre les agents | ✅ |
-| 🏆 **Tournois** | Benchmark automatisé entre agents | ✅ |
-| 💾 **Checkpointing** | Sauvegarde/reprise device-agnostic (CPU ↔ GPU) | ✅ |
-| 🔁 **Callbacks** | EarlyStopping, MetricsCallback, SmartCheckpoint | ✅ |
-| 📐 **Multi-CPU** | Entraînement parallèle via `SubprocVecEnv` | ✅ |
-| 🤖 **Self-play** | Configuration prête pour le self-play | 🔜 |
+| **SmartDQN** | Agent DQN avec features intelligentes (override de RLCard) | ✅ |
+| **MaskablePPO** | PPO avec action masking via SB3-Contrib | ✅ |
+| **XGBoost Agent** | Imitation learning à partir de Pluribus | ✅ |
+| **99 Features** | Feature engineering avancé (cartes, position, GTO, equity denial, nut advantage) | ✅ |
+| **Adapters** | Support multi-source (RLCard + Pluribus .phh) | ✅ |
+| **Rule-Based Bots** | V1 (exploitatif) + V2 (GTO 4/4, +7.05 BB/main vs Random) | ✅ |
+| **Config system** | Configurations type-safe avec presets (quick, standard, Kaggle) | ✅ |
+| **TensorBoard** | Monitoring temps réel des métriques | ✅ |
+| **Live Assistant** | Assistant poker en temps réel (Rich UI) | ✅ |
+| **Human vs AI** | Mode de jeu humain contre les agents | ✅ |
+| **Tournois** | Benchmark automatisé entre agents | ✅ |
+| **Checkpointing** | Sauvegarde/reprise device-agnostic (CPU ↔ GPU) | ✅ |
+| **Callbacks** | EarlyStopping, MetricsCallback, SmartCheckpoint | ✅ |
+| **Multi-CPU** | Entraînement parallèle via `SubprocVecEnv` | ✅ |
+| **Self-play** | Curriculum learning (Random → XGBoost → Rule V1 → Rule V2) | ✅ |
 
 ---
 
-## 🚀 Installation
+## Installation
 
 ### Prérequis
 
@@ -219,7 +222,7 @@ pip install -r requirements.txt
 
 ---
 
-## ⚡ Démarrage rapide
+## Démarrage rapide
 
 ### 1. Jouer contre l'IA (Humain vs XGBoost)
 
@@ -258,10 +261,14 @@ Lance l'entraînement parallèle sur tous les cœurs CPU avec sauvegarde automat
 ### 5. Lancer un tournoi d'évaluation
 
 ```bash
-python tests/tournament.py
+# Tournoi flexible Hero vs Villain
+python tests/tournament.py --hero rule_v2 --villain rule -n 10000 -v 5
+
+# Hero PPO vs Villain Rule V2
+python tests/tournament.py --hero models/ppo_model.zip --villain rule_v2 -n 5000
 ```
 
-Compare les agents XGBoost vs DQN sur 10 000 mains.
+Supporte tous les types d'agents : `rule`, `rule_v2`, `xgb`, modèles `.zip` (PPO), ou `random`.
 
 ### 6. Visualiser les résultats
 
@@ -275,7 +282,7 @@ tensorboard --logdir=logs
 
 ---
 
-## 📦 Modules en détail
+## Modules en détail
 
 ### Core — GameState
 
@@ -337,22 +344,72 @@ agent = XGBoostRLCardAgent(
 
 Wrapper Gym pour utiliser PPO/MaskablePPO via Stable-Baselines3. Inclut un `LegalActionWrapper` qui masque les actions illégales pendant l'inférence.
 
+#### RuleBasedBot V1 (`agents/rule_agents.py`)
+
+Bot exploitatif rapide (~10μs/décision) utilisant des ranges preflop à 4 niveaux, évaluation Treys et heuristiques SPR/pot odds.
+
+```python
+from agents.rule_agents import RuleBasedBot
+bot = RuleBasedBot(env=env)
+```
+
+#### AdvancedRuleBot V2 (`agents/rule_agents.py`)
+
+Bot GTO-leaning avec stratégie adaptative. **Score GTO : 4/4.**
+
+| Composant | Description |
+|---|---|
+| **Preflop ranges** | 7 positions × open/3bet/4bet |
+| **Board texture** | Monotone, paired, connected, high/low |
+| **Draw analysis** | Outs exacts + combo draws + backdoors |
+| **Multi-barrel** | C-bet → double barrel → triple barrel (blockers) |
+| **Float strategy** | Call flop IP → steal turn |
+| **Adaptive sizing** | Half-pot / pot / all-in selon texture × SPR |
+| **Opponent tracking** | `OpponentTracker` (VPIP, PFR, AF) temps réel |
+| **Adaptation** | Moins de bluffs vs calling stations, plus vs nits |
+
+```python
+from agents.rule_agents import AdvancedRuleBot
+bot = AdvancedRuleBot(env=env)  # Usage : 'rule_v2' dans les configs
+```
+
+**Résultats tournois (5-10K mains) :**
+
+| Matchup | V1 | V2 |
+|---|---|---|
+| vs Random | +3.07 BB/main | **+7.05 BB/main** |
+| vs PPO | +1.49 BB/main | **+2.44 BB/main** |
+| V2 vs V1 | — | **+0.37 BB/main** |
+
+**Vérification GTO :**
+
+| Test | Résultat | Cible | |
+|---|---|---|---|
+| Self-play (V2 vs V2) | +0.002 BB/main | ≈0 | ✅ |
+| Value:Bluff ratio | 2.32:1 | ~2:1 | ✅ |
+| VPIP | 36.2% | 25-35% | ✅ |
+| PFR | 21.4% | 15-25% | ✅ |
+
 ---
 
 ### Features — Feature Engineering
 
-Le `FeatureExtractor` (`features/feature_builder.py`) produit un vecteur de **87 features** à partir de n'importe quel `GameState` :
+Le `FeatureExtractor` (`features/feature_builder.py`) produit un vecteur de **99 features** à partir de n'importe quel `GameState` :
 
 | Catégorie | # Features | Exemples |
 |---|---|---|
-| 🃏 **Cartes** | 22 | Rank, suited, paire, force de main (Treys), texture du board |
-| 📍 **Position** | 6 | Position normalisée, distance au BTN, early/middle/late |
-| 💰 **Stack & Pot** | 12 | SPR, pot odds, stack en BB, catégorie short/deep |
-| 🎬 **Actions** | 15 | Historique d'aggression, facing bet, actions légales |
-| 🌍 **Contexte** | 12 | Street one-hot, nombre de joueurs, heads-up |
-| 🧮 **Game Theory** | 20 | EV estimé, fold equity, equity, implied odds, polarisation |
+| **Cartes** | 22 | Rank, suited, paire, force de main (Treys), texture du board |
+| **Position** | 6 | Position normalisée, distance au BTN, early/middle/late |
+| **Stack & Pot** | 12 | SPR, pot odds, stack en BB, catégorie short/deep |
+| **Actions** | 15 | Historique d'aggression, facing bet, actions légales |
+| **Contexte** | 12 | Street one-hot, nombre de joueurs, heads-up |
+| **Game Theory** | 20 | EV estimé, fold equity, equity, implied odds, polarisation |
+| **GTO avancé** | 12 | Nut advantage, leverage, equity denial, check-raise signal |
 
 L'évaluation de la force de main utilise la bibliothèque **Treys** pour un calcul rapide et précis.
+
+> **📄 Documentation mathématique** : Les formulations détaillées des features liées à la théorie des jeux (equity, fold equity, EV, implied odds, nut advantage, leverage, equity denial, etc.) sont disponibles dans le rapport PDF :
+> **[gto_features_math.pdf](docs/gto_features_math.pdf)**
 
 ---
 
@@ -408,7 +465,7 @@ Pipeline **production-ready** intégrant :
 Environnement Gymnasium complet avec :
 - **Action masking** (`action_masks()`) pour MaskablePPO
 - Gestion du tour de jeu multi-joueurs (`_play_until_my_turn`)
-- Support adversaires XGBoost ou Random
+- Support adversaires XGBoost, Random, Rule V1 (`'rule'`), Rule V2 (`'rule_v2'`) ou modèle `.zip`
 
 ---
 
@@ -424,35 +481,40 @@ hands = parser.parse_all(max_hands=10000)
 
 ---
 
-## 🔄 Pipeline d'entraînement
+## Pipeline d'entraînement
 
 ```mermaid
 graph LR
-    A["📂 Pluribus .phh"] -->|PHHParser| B["📊 Dataset"]
-    B -->|XGBoost| C["🌲 Agent XGB"]
+    A["Pluribus .phh"] -->|PHHParser| B["Dataset"]
+    B -->|XGBoost| C["Agent XGB"]
     
-    D["🎮 RLCard Env"] -->|PokerRLTrainer| E["🧠 Agent DQN"]
-    D -->|SB3 Wrapper| F["🚀 Agent PPO"]
+    D["RLCard Env"] -->|PokerRLTrainer| E["Agent DQN"]
+    D -->|SB3 Wrapper| F["Agent PPO"]
     
     C -->|Adversaire| D
+    J["Rule V1"] -->|Adversaire| D
+    K["Rule V2 (GTO)"] -->|Adversaire| D
     
-    E --> G["🏆 Tournament"]
+    E --> G["Tournament"]
     F --> G
     C --> G
+    J --> G
+    K --> G
     
     G -->|Évaluation| H["📈 Métriques"]
-    H -->|TensorBoard| I["📊 Visualisation"]
+    H -->|TensorBoard + W&B| I["📊 Visualisation"]
 ```
 
 ### Workflow typique
 
 1. **Phase 1 — Imitation Learning** : Parser les données Pluribus → Entraîner XGBoost → Agent baseline expert.
 2. **Phase 2 — Reinforcement Learning** : Entraîner DQN/PPO contre l'agent XGBoost (curriculum learning).
-3. **Phase 3 — Évaluation** : Tournois entre agents sur des milliers de mains → Analyse statistique.
+3. **Phase 3 — Curriculum avancé** : Entraîner PPO contre Rule V1 (exploitatif) → Rule V2 (GTO).
+4. **Phase 4 — Évaluation** : Tournois entre agents sur 5-10K mains → Analyse statistique + vérification GTO.
 
 ---
 
-## 🎰 Live Assistant — Aide en temps réel
+## Live Assistant — Aide en temps réel
 
 L'assistant live permet d'obtenir les **recommandations de l'IA en temps réel** pendant une partie de poker (en ligne ou live).
 
@@ -477,7 +539,7 @@ L'assistant live permet d'obtenir les **recommandations de l'IA en temps réel**
 
 ---
 
-## 🏆 Évaluation & Tournois
+## Évaluation & Tournois
 
 ```bash
 # Tournoi automatisé (10 000 mains)
@@ -488,18 +550,19 @@ python tests/tournament.py
 - **BB/main** (Big Blinds par main) — mesure standard de profitabilité
 - **Win rate** — pourcentage de mains gagnantes
 - **Distribution d'actions** — FOLD/CALL/RAISE/ALL-IN
-- **Comparaison** vs Random, vs XGBoost, vs DQN
+- **Comparaison** vs Random, vs XGBoost, vs DQN, vs Rule V1, vs Rule V2
 
 **Seuils d'interprétation** :
 | Résultat | Interprétation |
 |---|---|
-| BB/main > 0 | ✅ Agent profitable |
-| BB/main > -0.25 | ⚠️ Correct (mieux que fold systématique) |
-| BB/main < -0.25 | ❌ Agent exploitable |
+| BB/main > +2.0 | Domination nette |
+| BB/main > 0 | Agent profitable |
+| BB/main > -0.25 | Correct (mieux que fold systématique) |
+| BB/main < -0.25 | Agent exploitable |
 
 ---
 
-## ⚙️ Configuration
+## Configuration
 
 Le système de configuration utilise des **dataclasses Python** pour une configuration type-safe et flexible.
 
@@ -540,26 +603,32 @@ config = FullTrainingConfig.load('configs/ma_config.json')
 
 ---
 
-## 🗺 Roadmap
+## Roadmap
 
 - [x] GameState standardisé + Adapter pattern
-- [x] Feature Extractor (87 features + Treys)
+- [x] Feature Extractor (87→99 features + Treys)
 - [x] Agent XGBoost (Imitation Learning Pluribus)
 - [x] Agent SmartDQN (RLCard)
 - [x] Agent MaskablePPO (Stable-Baselines3)
 - [x] Système de callbacks complet
 - [x] Live assistant (Rich UI)
 - [x] Tournois & benchmarks
-- [ ] Self-play training loop complet
+- [x] Feature Extractor étendu à 99 features (GTO avancé)
+- [x] Rule-Based Bot V1 (exploitatif, +3.07 BB/main vs Random)
+- [x] AdvancedRuleBot V2 (GTO 4/4, +7.05 BB/main vs Random)
+- [x] Vérification GTO (self-play, value/bluff ratio, VPIP/PFR)
+- [x] Self-play training loop complet (curriculum V1 → V2)
+- [x] Intégration W&B (Weights & Biases)
+- [ ] Déploiement API (FastAPI / gRPC)
+- [ ] Déploiement Hugging Face
 - [ ] Population-based training (PBT)
 - [ ] Monte Carlo CFR (Counterfactual Regret Minimization)
-- [ ] Intégration W&B (Weights & Biases)
 - [ ] Agent transformer (attention-based)
-- [ ] Déploiement API (FastAPI / gRPC)
+
 
 ---
 
-## 🛠 Stack technologique
+## Stack technologique
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -567,10 +636,10 @@ config = FullTrainingConfig.load('configs/ma_config.json')
 │  live_poker_pro.py │ play_human.py │ tournament.py  │
 ├─────────────────────────────────────────────────────┤
 │                     AGENT LAYER                     │
-│    SmartDQNAgent  │  MaskablePPO  │  XGBoostAgent   │
+│  SmartDQN │ MaskablePPO │ XGBoost │ Rule V1 │ V2    │
 ├─────────────────────────────────────────────────────┤
 │                    FEATURE LAYER                    │
-│         FeatureExtractor (87 dims) + Treys          │
+│         FeatureExtractor (99 dims) + Treys          │
 ├─────────────────────────────────────────────────────┤
 │                    ADAPTER LAYER                    │
 │        RLCardAdapter  │  PluribusAdapter            │
@@ -588,7 +657,7 @@ config = FullTrainingConfig.load('configs/ma_config.json')
 
 ---
 
-## 📄 Licence
+## Licence
 
 Ce projet est distribué sous la licence **Creative Commons Attribution - Pas d'Utilisation Commerciale 4.0 International** ([CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/deed.fr)).
 
@@ -596,16 +665,16 @@ Ce projet est distribué sous la licence **Creative Commons Attribution - Pas d'
 
 | Vous pouvez | Vous ne pouvez PAS |
 |---|---|
-| ✅ Utiliser pour la recherche | ❌ Vendre ou commercialiser |
-| ✅ Modifier et adapter | ❌ Créer un service payant |
-| ✅ Partager (avec attribution) | ❌ Utiliser pour tricher au poker |
-| ✅ Publier des travaux dérivés (non-commerciaux) | ❌ Retirer la mention d'attribution |
+| Utiliser pour la recherche | Vendre ou commercialiser |
+| Modifier et adapter | Créer un service payant |
+| Partager (avec attribution) | Utiliser pour tricher au poker |
+| Publier des travaux dérivés (non-commerciaux) | Retirer la mention d'attribution |
 
 Voir le fichier [LICENSE](LICENSE) pour le texte complet.
 
 ---
 
-## 🤝 Contribuer
+## Contribuer
 
 1. Fork le projet
 2. Créer une branche feature (`git checkout -b feature/mon-agent`)

@@ -136,6 +136,10 @@ class RLCardAdapter:
             obs.get('action_record', []),
             street
         )
+
+        all_actions_history = RLCardAdapter._extract_all_actions(
+            obs.get('action_record', [])
+        )
         
         # === 10. Construction du GameState ===
         return GameState(
@@ -151,6 +155,7 @@ class RLCardAdapter:
             amount_to_call=amount_to_call,
             legal_actions=legal_actions,
             actions_this_street=actions_this_street,
+            all_actions_history=all_actions_history,
             player_id=player_id
         )
     
@@ -386,6 +391,29 @@ class RLCardAdapter:
                 else:
                     actions.append(action_name)
         
+        return actions
+
+    @staticmethod
+    def _extract_all_actions(action_record: List) -> List[str]:
+        """
+        Extrait TOUT l'historique de la main pour déduire les streets preflop/postflop.
+        """
+        actions = []
+        for record in action_record:
+            if len(record) >= 3:
+                player_id, action_name, amount = record[0], record[1], record[2]
+                if amount > 0:
+                    actions.append(f"{action_name}_{amount}")
+                else:
+                    actions.append(action_name)
+            elif isinstance(record, tuple) and len(record) == 2 and record[0] is None and record[1] == "deal_public_cards":
+                # Trick pour voir si de nouvelles cartes communes ont été distribuées (Optionnel, selon RLCard)
+                actions.append("flop_starts") 
+                
+        # RLCard "action_record" ne sépare pas les streets avec des mots-clés clairs.
+        # Donc "flop_starts" n'est pas forcément inséré par défaut. 
+        # Pour une détection PPO robuste "is_3bet_pot", on scanera les 'raise' avant le 1er 'check' postflop, 
+        # ou on considèrera temporairement tous les raises comme preflop par convention RLCard si non séparé.
         return actions
     
     @staticmethod

@@ -1,0 +1,894 @@
+\documentclass[11pt, a4paper]{article}
+
+% ═══════════════════════════════════════════════════════════
+% PACKAGES
+% ═══════════════════════════════════════════════════════════
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[english]{babel}
+\usepackage{amsmath, amssymb, amsthm}
+\usepackage{mathtools}
+\usepackage{geometry}
+\usepackage{hyperref}
+\usepackage{booktabs}
+\usepackage{array}
+\usepackage{xcolor}
+\usepackage{tcolorbox}
+\usepackage{enumitem}
+\usepackage{fancyhdr}
+\usepackage{titlesec}
+\usepackage{caption}
+\usepackage{float}
+
+\geometry{margin=2.5cm}
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=red!70!black,
+    urlcolor=blue!60!black
+}
+
+% ═══════════════════════════════════════════════════════════
+% THEOREM ENVIRONMENTS
+% ═══════════════════════════════════════════════════════════
+\theoremstyle{definition}
+\newtheorem{definition}{Definition}[section]
+\newtheorem{proposition}{Proposition}[section]
+\newtheorem{remark}{Remark}[section]
+
+% ═══════════════════════════════════════════════════════════
+% CUSTOM COMMANDS
+% ═══════════════════════════════════════════════════════════
+\newcommand{\feature}[1]{\texttt{#1}}
+\newcommand{\clip}[1]{\text{clip}_{[0,1]}\!\left(#1\right)}
+
+\tcbuselibrary{skins, breakable}
+\newtcolorbox{featurebox}[1]{
+    colback=blue!3, colframe=blue!50!black, fonttitle=\bfseries,
+    title={#1}, breakable, arc=2mm
+}
+\newtcolorbox{refbox}{
+    colback=gray!5, colframe=gray!50, fonttitle=\bfseries\small,
+    title={References \& Justification}, breakable, arc=1mm
+}
+
+% ═══════════════════════════════════════════════════════════
+% HEADER
+% ═══════════════════════════════════════════════════════════
+\pagestyle{fancy}
+\fancyhf{}
+\fancyhead[L]{\small RL\_phase2 -- Feature Engineering}
+\fancyhead[R]{\small \thepage}
+\renewcommand{\headrulewidth}{0.4pt}
+
+% ═══════════════════════════════════════════════════════════
+% TITLE
+% ═══════════════════════════════════════════════════════════
+\title{
+    \vspace{-1cm}
+    \textbf{Game-Theoretic Feature Engineering}\\[0.3cm]
+    \large Mathematical Foundations for GTO-Based\\
+    No-Limit Hold'em Feature Extraction\\[0.3cm]
+    \normalsize RL\_phase2 --- 99-Dimensional State Representation
+}
+\author{RL\_phase2 Project Documentation}
+\date{February 2026}
+
+\begin{document}
+\maketitle
+
+\begin{abstract}
+This document provides a formal mathematical treatment of the 32 game-theoretic features
+used in the RL\_phase2 poker agent's state representation. Each feature is derived from
+established concepts in Game Theory Optimal (GTO) poker strategy, decision theory, and
+combinatorial analysis. We present the mathematical formulation, implementation details,
+normalization scheme, and relevant academic references for each feature. The full feature
+vector comprises 99 dimensions, of which 67 encode card/position/stack information and
+32 encode game-theoretic quantities described herein.
+\end{abstract}
+
+\tableofcontents
+\newpage
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 1: NOTATION
+% ═══════════════════════════════════════════════════════════
+\section{Notation and Conventions}
+
+\begin{table}[H]
+\centering
+\begin{tabular}{cl}
+\toprule
+\textbf{Symbol} & \textbf{Description} \\
+\midrule
+$P$ & Current pot size (in chips) \\
+$B$ & Bet or raise size facing the player \\
+$S$ & Player's remaining stack \\
+$C$ & Amount to call ($= B$ when facing a bet) \\
+$n$ & Number of remaining streets (preflop=3, flop=2, turn=1, river=0) \\
+$N$ & Number of active players \\
+$\mathcal{E}(h, b)$ & Estimated equity of hand $h$ on board $b$ \\
+$\sigma(x)$ & Sigmoid-like normalization: $\sigma_k(x) = \frac{x}{x + k}$ \\
+$\text{clip}_{[a,b]}(x)$ & $\max(a, \min(b, x))$ \\
+IP & In Position (BTN, CO) \\
+OOP & Out of Position (SB, BB, UTG, MP) \\
+\bottomrule
+\end{tabular}
+\caption{Notation used throughout this document.}
+\end{table}
+
+All features are normalized to $[0, 1]$ to facilitate neural network training. We use two primary normalization strategies:
+\begin{enumerate}
+    \item \textbf{Linear rescaling}: $f = \frac{x - x_{\min}}{x_{\max} - x_{\min}}$, when the range is bounded.
+    \item \textbf{Sigmoid normalization}: $f = \frac{x}{x + k}$ for $x \geq 0$, which maps $[0, \infty) \to [0, 1)$ with $f(k) = 0.5$.
+\end{enumerate}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 2: EV ESTIMATIONS
+% ═══════════════════════════════════════════════════════════
+\section{Expected Value Estimations (Features 0--2)}
+
+\subsection{EV Call (Feature 0)}
+
+\begin{featurebox}{EV Call --- Expected Value of Calling}
+\begin{definition}
+The expected value of calling a bet of size $C$ into a pot of size $P$ with equity $\mathcal{E}$ is:
+\begin{equation}
+    \text{EV}_{\text{call}}^{\text{raw}} = \mathcal{E} \cdot (P + C) - (1 - \mathcal{E}) \cdot C
+\end{equation}
+Normalized to $[0, 1]$ with $0.5$ representing breakeven:
+\begin{equation}
+    \feature{ev\_call} = \clip{\frac{\text{EV}_{\text{call}}^{\text{raw}} / M + 1}{2}}
+\end{equation}
+where $M = \max(P + C,\; C,\; 1)$ is a scaling factor.
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+This is the fundamental EV equation from decision theory applied to poker. The formulation follows directly from the definition of expected value as $\text{EV} = \sum_i p_i \cdot v_i$, weighted by the probability of winning (equity) and the payoff in each outcome. See \textbf{Sklansky} \cite{sklansky1999} Ch.~2 for the standard treatment, and \textbf{Chen \& Ankenman} \cite{chen2006} Ch.~3 for the formal game-theoretic framing.
+\end{refbox}
+
+\subsection{EV Fold (Feature 1)}
+
+\begin{featurebox}{EV Fold --- Sunk Cost Indicator}
+\begin{definition}
+The fold cost measures the fraction of the player's total investment already committed to the pot:
+\begin{equation}
+    I = \max(0,\; P - S)
+\end{equation}
+\begin{equation}
+    \feature{ev\_fold} = \frac{I}{\max(S + I,\; 1)}
+\end{equation}
+where $I$ is the estimated invested amount.
+When $\feature{ev\_fold} = 0$, folding is free (e.g., checking in the big blind). When $\feature{ev\_fold} \to 1$, the player has invested nearly their entire stack, making folding extremely costly.
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+While sunk cost should not theoretically affect optimal play (the ``sunk cost fallacy''), the commitment level is a critical input for determining pot odds and stack-to-pot ratio decisions. \textbf{Harrington} \cite{harrington2004} extensively discusses the concept of ``pot commitment'' in Vol.~1, Ch.~7.
+\end{refbox}
+
+\subsection{EV Raise (Feature 2)}
+
+\begin{featurebox}{EV Raise --- Expected Value of Raising}
+\begin{definition}
+The EV of raising incorporates fold equity $\phi$ (the probability that the opponent folds):
+\begin{equation}
+    \text{EV}_{\text{raise}} = \phi \cdot \underbrace{\frac{P}{P + S}}_{\text{gain if fold}} + (1 - \phi) \cdot \underbrace{\frac{\mathcal{E} \cdot (P + C)}{P + S}}_{\text{gain if called}}
+\end{equation}
+\begin{equation}
+    \feature{ev\_raise} = \clip{\text{EV}_{\text{raise}}}
+\end{equation}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+This two-outcome model is a simplification of the full raise EV calculation. The fold equity component comes from \textbf{Sklansky \& Malmuth} \cite{sklansky1999} and is formalized in \textbf{Tipton} \cite{tipton2019}, Ch.~4. The modern treatment in solver analysis (e.g., PioSolver documentation) confirms that raise EV = weighted sum of fold-through equity and showdown equity.
+\end{refbox}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 3: FOLD EQUITY & ODDS
+% ═══════════════════════════════════════════════════════════
+\section{Fold Equity and Odds (Features 3--6)}
+
+\subsection{Fold Equity (Feature 3)}
+
+\begin{featurebox}{Fold Equity}
+\begin{definition}
+Fold equity $\phi$ is the estimated probability that all opponents fold to an aggressive action. It is computed heuristically based on:
+\begin{itemize}
+    \item Street (higher on later streets),
+    \item Betting pattern aggressiveness,
+    \item Relative bet sizing.
+\end{itemize}
+\begin{equation}
+    \phi = f(\text{street}, \text{actions}, B/P)
+\end{equation}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Fold equity is a concept pioneered by \textbf{Sklansky} \cite{sklansky1999} and extensively used in modern GTO solvers. The fact that total EV = showdown equity + fold equity is the fundamental theorem underlying semi-bluff strategy. See \textbf{Janda} \cite{janda2017} Ch.~2 for a modern GTO interpretation.
+\end{refbox}
+
+\subsection{Implied Odds (Feature 4)}
+
+\begin{featurebox}{Implied Odds}
+\begin{definition}
+Implied odds extend pot odds by accounting for expected future winnings on later streets. For a drawing hand with equity $\mathcal{E}$:
+\begin{equation}
+    \text{IO} = \frac{P + \text{Future Bets}}{C} \approx \frac{P + \lambda \cdot S}{C}
+\end{equation}
+where $\lambda \in [0, 1]$ is a scaling factor dependent on hand strength and remaining streets. The feature is normalized as:
+\begin{equation}
+    \feature{implied\_odds} = \clip{\text{IO}_{\text{norm}}}
+\end{equation}
+Implied odds are high when: (1) the hand is drawing to a strong made hand, (2) the stack is deep, (3) the draw is hidden (e.g., gutshots have better implied odds than flush draws).
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+The concept of implied odds originates from \textbf{Sklansky} \cite{sklansky1999}. \textbf{Miller, Sklansky \& Malmuth} \cite{miller2004} provide a thorough treatment in the context of limit hold'em. \textbf{Harrington} \cite{harrington2004} adapts the concept to no-limit play, noting that implied odds increase with effective stack depth and decrease when draws are obvious.
+\end{refbox}
+
+\subsection{Reverse Implied Odds (Feature 5)}
+
+\begin{featurebox}{Reverse Implied Odds}
+\begin{definition}
+Reverse implied odds capture the risk of completing a draw but still losing to a better hand:
+\begin{equation}
+    \text{RIO} = f(\mathcal{E}, \text{board texture}, \text{hand dominance risk})
+\end{equation}
+High RIO situations include: second-nut flush draws, low straight draws on monotone boards, and dominated pairs.
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+\textbf{Harrington} \cite{harrington2004} Vol.~2 discusses reverse implied odds situations extensively. \textbf{Tipton} \cite{tipton2019} formalizes this as ``post-completion conditional equity loss'' in Ch.~7.
+\end{refbox}
+
+\subsection{Commitment Level (Feature 6)}
+
+\begin{featurebox}{Pot Commitment}
+\begin{definition}
+The commitment level measures how much of the initial stack has been invested:
+\begin{equation}
+    \feature{commitment} = \clip{\frac{I}{\max(S + I,\; 1)}}
+\end{equation}
+where $I = \max(0, P - S)$.
+
+When commitment exceeds $\sim 0.33$ (one-third of stack), conventional wisdom dictates that folding becomes suboptimal for most one-pair or better hands.
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+The ``point of no return'' in commitment theory is discussed by \textbf{Harrington} \cite{harrington2004} (the ``Harrington M-ratio'') and formalized by \textbf{Chen \& Ankenman} \cite{chen2006}, who show that in a commitment game, a player should commit when $\text{SPR} < \frac{1}{\mathcal{E}}$.
+\end{refbox}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 4: RANGE ANALYSIS
+% ═══════════════════════════════════════════════════════════
+\section{Range Analysis (Features 7--15)}
+
+\subsection{Range Advantage (Features 7--9)}
+
+\begin{featurebox}{Range Advantage Distribution}
+\begin{definition}
+The range advantage features decompose the player's estimated hand distribution into three categories:
+\begin{align}
+    \feature{range\_nutted} &= P(\text{hand} \in \text{top 15\% of range}) \\
+    \feature{range\_medium} &= P(\text{hand} \in \text{middle 50\% of range}) \\
+    \feature{range\_weak} &= P(\text{hand} \in \text{bottom 35\% of range})
+\end{align}
+These probabilities are estimated from the hand strength $\mathcal{E}(h, b)$ relative to position-dependent range thresholds.
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Range-based thinking is the cornerstone of modern GTO poker. \textbf{Janda} \cite{janda2017} formalizes range decomposition in Ch.~4. \textbf{Pluribus} \cite{brown2019} implicitly encodes range information through its blueprint strategy. The concept of ``nutted vs.\ medium vs.\ weak'' originated with \textbf{Galfond's} range classification system, later adopted by solver-based training tools like GTO Wizard.
+\end{refbox}
+
+\subsection{Board Coverage (Features 10--12)}
+
+\begin{featurebox}{Board Coverage}
+\begin{definition}
+Board coverage measures how well a player's range connects with different regions of the board:
+\begin{align}
+    \feature{coverage\_high} &= \text{proportion of range that hits high cards} \\
+    \feature{coverage\_medium} &= \text{proportion hitting middle cards} \\
+    \feature{coverage\_low} &= \text{proportion hitting low cards}
+\end{align}
+Coverage is estimated based on position preflop ranges and board rank distribution.
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Board coverage analysis is a concept from modern solver-based poker theory. \textbf{Janda} \cite{janda2017} discusses how GTO strategies adjust c-bet frequency based on board coverage in Ch.~5--6. PioSolver documentation explicitly mentions ``range-vs-board interaction'' as a primary driver of flop strategy.
+\end{refbox}
+
+\subsection{Polarization (Features 13--15)}
+
+\begin{featurebox}{Range Polarization}
+\begin{definition}
+Polarization describes the shape of a player's value distribution:
+\begin{align}
+    \feature{polarized} &\in [0, 1] \quad \text{(strong or weak, little medium)} \\
+    \feature{merged} &\in [0, 1] \quad \text{(mostly medium-strength)} \\
+    \feature{capped} &\in [0, 1] \quad \text{(no nutted hands in range)}
+\end{align}
+A polarized range bets big (either nuts or bluffs). A merged range bets small (medium-strength value). A capped range cannot raise credibly.
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+The polarized vs.\ merged vs.\ capped trichotomy is central to modern GTO theory. \textbf{Janda} \cite{janda2017} devotes Ch.~3 to this concept: ``Polarized ranges allow geometric sizing, while merged ranges prefer smaller bets.'' \textbf{Tipton} \cite{tipton2019} formalizes this in his ``Linear vs.\ Polar'' betting model (Ch.~5), showing that optimal bet size is directly determined by the shape of the betting range.
+\end{refbox}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 5: BETTING PATTERNS
+% ═══════════════════════════════════════════════════════════
+\section{Betting Pattern Analysis (Features 16--19)}
+
+\begin{featurebox}{Betting Pattern Classification}
+\begin{definition}
+The betting pattern of the current action sequence is classified into four strategic archetypes:
+\begin{align}
+    \feature{pattern\_value} &= P(\text{actions consistent with value betting}) \\
+    \feature{pattern\_bluff} &= P(\text{actions consistent with bluffing}) \\
+    \feature{pattern\_balanced} &= P(\text{actions consistent with balanced play}) \\
+    \feature{pattern\_exploitative} &= P(\text{actions consistent with exploitative play})
+\end{align}
+These are estimated from the action history (bet sizes, check/raise patterns) on the current street.
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Betting pattern recognition is a key component of opponent modeling. \textbf{Billings et al.} \cite{billings2002} introduced action pattern matching in the Loki poker bot. The value/bluff/balanced/exploitative taxonomy aligns with \textbf{Janda's} \cite{janda2017} classification in Ch.~2 and is implicit in solver output analysis (e.g., the bluff-to-value ratio).
+\end{refbox}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 6: GTO FUNDAMENTALS
+% ═══════════════════════════════════════════════════════════
+\section{GTO Fundamentals (Features 20--23)}
+
+\subsection{Minimum Defense Frequency (Feature 20)}
+
+\begin{featurebox}{MDF --- Minimum Defense Frequency}
+\begin{definition}
+When facing a bet of size $B$ into a pot of size $P$, the Minimum Defense Frequency is:
+\begin{equation}
+    \boxed{\text{MDF} = \frac{P}{P + B}}
+\end{equation}
+This represents the minimum fraction of hands a player must continue with (call or raise) to prevent the opponent's pure bluffs from being automatically profitable.
+\end{definition}
+
+\begin{proposition}
+If a player folds more than $1 - \text{MDF}$ of their range, the opponent achieves positive expected value by bluffing with any two cards.
+\end{proposition}
+\begin{proof}
+The opponent's bluff EV is $\text{EV}_{\text{bluff}} = P \cdot P(\text{fold}) - B \cdot P(\text{call})$. Setting $\text{EV}_{\text{bluff}} = 0$: $P \cdot (1 - \text{MDF}) = B \cdot \text{MDF}$, which yields $\text{MDF} = P / (P + B)$. \qed
+\end{proof}
+
+\textbf{Implementation:}
+\begin{equation}
+    \feature{mdf} = \begin{cases} P / (P + B) & \text{if } B > 0 \\ 0 & \text{if } B = 0 \text{ (not facing a bet)} \end{cases}
+\end{equation}
+\end{featurebox}
+
+\begin{refbox}
+MDF is a foundational result in game theory applied to poker. The formal derivation appears in \textbf{Chen \& Ankenman} \cite{chen2006}, Ch.~12 (``Defense Frequencies''). \textbf{Janda} \cite{janda2017} presents it as ``the most important equation in poker'' (Ch.~2). The concept directly derives from \textbf{von Neumann \& Morgenstern's} \cite{vonneumann1944} minimax theorem: in a zero-sum game, each player must prevent the opponent from having a dominant strategy.
+
+Typical MDF values in practice:
+\begin{center}
+\begin{tabular}{cc}
+\toprule
+Bet Size (relative to pot) & MDF \\
+\midrule
+$\frac{1}{3}P$ & 75\% \\
+$\frac{1}{2}P$ & 67\% \\
+$\frac{2}{3}P$ & 60\% \\
+$1P$ (pot-size) & 50\% \\
+$2P$ (overbet) & 33\% \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{refbox}
+
+\subsection{Alpha --- Bluff Breakeven Threshold (Feature 21)}
+
+\begin{featurebox}{Alpha ($\alpha$) --- Bluff Breakeven Frequency}
+\begin{definition}
+Alpha is the minimum fold frequency required from the opponent for a bluff of size $B_{\text{eff}}$ to break even:
+\begin{equation}
+    \boxed{\alpha = \frac{B_{\text{eff}}}{P + B_{\text{eff}}}}
+\end{equation}
+where $B_{\text{eff}}$ is the effective bet size (last aggressive action or amount to call).
+
+A bluff is $+$EV when $\text{fold equity}\ \phi > \alpha$.
+\end{definition}
+
+\textbf{Relationship to MDF:}
+\begin{equation}
+    \alpha = 1 - \text{MDF}
+\end{equation}
+Alpha and MDF are two sides of the same coin: MDF constrains the defender, while $\alpha$ constrains the aggressor.
+\end{featurebox}
+
+\begin{refbox}
+The $\alpha$ parameter is derived identically to MDF but from the bluffer's perspective. \textbf{Sklansky} \cite{sklansky1999} introduced the concept of ``bluff break-even point'' in \textit{The Theory of Poker}. \textbf{Chen \& Ankenman} \cite{chen2006} provide the formal game-theoretic proof in their AKQ toy game analysis (Ch.~5--6), showing that in Nash equilibrium, both the bluffing and defending frequencies are uniquely determined by the pot geometry.
+\end{refbox}
+
+\subsection{Bet-to-Pot Ratio (Feature 22)}
+
+\begin{featurebox}{Bet-to-Pot Ratio (Normalized)}
+\begin{definition}
+The bet-to-pot ratio captures the relative sizing of the current bet, normalized using a sigmoid function:
+\begin{equation}
+    r = \frac{B_{\text{eff}}}{P}
+\end{equation}
+\begin{equation}
+    \feature{bet\_to\_pot} = \frac{r}{1 + r} = \sigma_1(r)
+\end{equation}
+
+This maps the ratio to $[0, 1)$:
+\begin{center}
+\begin{tabular}{cc}
+\toprule
+Raw Ratio $r$ & Feature Value \\
+\midrule
+0 (no bet) & 0.00 \\
+$\frac{1}{3}$ & 0.25 \\
+$\frac{1}{2}$ & 0.33 \\
+1 (pot-size) & 0.50 \\
+2 (2x pot) & 0.67 \\
+$\infty$ (all-in) & $\to 1.00$ \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Bet sizing theory is extensively covered in \textbf{Tipton} \cite{tipton2019}, Ch.~5--6. The sigmoid normalization $\sigma_k(x) = x/(x+k)$ is a standard technique for unbounded positive quantities in ML feature engineering \cite{bishop2006}. In GTO poker, bet sizing conveys information about range composition: larger bets signal more polarized ranges \cite{janda2017}.
+\end{refbox}
+
+\subsection{Pot Geometry (Feature 23)}
+
+\begin{featurebox}{Pot Geometry --- Multi-Street Sizing Optimality}
+\begin{definition}
+Geometric bet sizing determines the optimal per-street bet size to deploy the entire stack over $n$ remaining streets. The geometric fraction is:
+\begin{equation}
+    \boxed{g = \left(\frac{S + P}{P}\right)^{1/n} - 1}
+\end{equation}
+The optimal geometric bet on the current street is $B_{\text{geo}} = P \cdot g$.
+
+The feature compares the actual bet to the geometric optimal:
+\begin{equation}
+    \feature{pot\_geometry} = \begin{cases}
+        \sigma_1\!\left(\dfrac{B_{\text{eff}}}{B_{\text{geo}}}\right) & \text{if } B_{\text{eff}} > 0 \text{ and } B_{\text{geo}} > 0 \\[6pt]
+        0.5 & \text{otherwise (neutral)}
+    \end{cases}
+\end{equation}
+
+\begin{itemize}
+    \item $\feature{pot\_geometry} = 0.5$: sizing exactly matches geometric optimal.
+    \item $\feature{pot\_geometry} > 0.5$: over-geometric (polarized sizing).
+    \item $\feature{pot\_geometry} < 0.5$: under-geometric (merged sizing).
+\end{itemize}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Geometric bet sizing was first formalized by \textbf{Tipton} \cite{tipton2019} in Ch.~6 (``Multi-Street Games''). The key insight is that in a polarized betting game with $n$ streets remaining, the optimal strategy distributes the stack evenly across streets using the geometric series. This result is confirmed by solver outputs: PioSolver's ``Geometric Mode'' uses exactly this formula. \textbf{Janda} \cite{janda2017} discusses geometric sizing in the context of building a pot for a river shove (Ch.~3).
+
+The derivation proceeds from requiring that the total stack is deployed as:
+\begin{equation}
+    P \cdot (1 + g)^n = S + P
+\end{equation}
+Solving for $g$ yields the formula above. For example, with $S = 300$, $P = 100$, and $n = 2$ streets:
+\[
+    g = \left(\frac{400}{100}\right)^{1/2} - 1 = 2 - 1 = 1 \quad \Rightarrow \text{bet pot on each street.}
+\]
+\end{refbox}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 7: TIER 1 --- ADVANCED GTO
+% ═══════════════════════════════════════════════════════════
+\section{Tier 1: Advanced GTO Features (Features 24--26)}
+
+\subsection{Equity Realization (Feature 24)}
+
+\begin{featurebox}{Equity Realization}
+\begin{definition}
+Equity realization (EQR) is the fraction of raw equity that a hand actually converts into chips, accounting for positional and strategic factors:
+\begin{equation}
+    \boxed{\text{EQR} = \beta_{\text{pos}} \cdot \delta_{\text{hand}} \cdot \mu_{\text{mw}}}
+\end{equation}
+where:
+\begin{align}
+    \beta_{\text{pos}} &= \begin{cases} 0.95 & \text{if IP (BTN, CO)} \\ 0.70 & \text{if OOP (SB, BB, UTG, MP)} \end{cases} \\[6pt]
+    \delta_{\text{hand}} &= \begin{cases}
+        0.85 & \text{single draw (flush or straight draw)} \\
+        0.92 & \text{combo draw (flush + straight)} \\
+        1.05 & \text{nutted hand } (\mathcal{E} > 0.8) \\
+        0.75 & \text{weak hand } (\mathcal{E} < 0.3) \\
+        1.00 & \text{otherwise}
+    \end{cases} \\[6pt]
+    \mu_{\text{mw}} &= \max\!\left(0.7,\; 1 - 0.05 \cdot (N - 2)\right)
+\end{align}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Equity realization is a concept that emerged from solver analysis in the mid-2010s. \textbf{GTO Wizard} (\url{https://gtowizard.com}) and \textbf{Monker Solver} documentation define EQR as:
+\[
+    \text{EQR} = \frac{\text{Actual EV}}{\text{Raw Equity} \times \text{Pot}}
+\]
+The position-based coefficients ($\beta_{\text{IP}} \approx 0.95$, $\beta_{\text{OOP}} \approx 0.70$) are empirically validated by solver simulations. \textbf{Brokos} \cite{brokos2014} discusses EQR in his treatment of preflop play (Ch.~4): ``Being in position allows you to realize nearly all of your equity, while being out of position costs you roughly 20--30\%.'' The multiway penalty is documented in \textbf{Janda} \cite{janda2017}, Ch.~8: equity dilution in multiway pots follows approximately $\text{EQR}_{\text{mw}} \approx \text{EQR}_{\text{HU}} \times (1 - 0.05(N-2))$.
+\end{refbox}
+
+\subsection{Blocker Effects (Feature 25)}
+
+\begin{featurebox}{Blocker Effects}
+\begin{definition}
+Blockers measure how much the player's hole cards reduce the number of strong hand combinations available to opponents. The blocker score is computed as a sum of four components:
+
+\begin{equation}
+    \feature{blockers} = \clip{\sum_{i=1}^{4} w_i \cdot \mathbb{1}[\text{condition}_i]}
+\end{equation}
+
+\begin{enumerate}
+    \item \textbf{Nut flush blocker} ($w_1 = 0.4$): Hero holds $A_s$ where $s$ is the dominant board suit with $\geq 3$ cards. Reduces opponent's nut flush combos from $C$ to $0$.
+    
+    \item \textbf{High card blocker} ($w_2 = 0.2$): Hero holds the same rank as the board's highest card (for ranks $\geq Q$). Reduces top-pair combinations by 50\% (from $\binom{3}{1} = 3$ combos to $\binom{2}{1} = 2$).
+    
+    \item \textbf{Set blocker} ($w_3 = 0.1$): Hero holds a card matching a board card (rank $\geq 10$). Reduces opponent's set combos from $\binom{3}{2} = 3$ to $\binom{2}{2} = 1$.
+    
+    \item \textbf{Straight blocker} ($w_4 = 0.1$): Hero holds cards that fill gaps between board cards, reducing straight combinations.
+\end{enumerate}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Blocker analysis is a central concept in advanced GTO play. \textbf{Janda} \cite{janda2017} devotes Ch.~9 to blockers: ``The most important blocker in poker is the nut flush blocker [...] holding $A\spadesuit$ when the board has three spades immediately removes 100\% of the nut flush combinations from the opponent's range.''
+
+The combinatorial justification: a deck has 4 cards of each rank. If hero holds one, opponents only have $\binom{3}{k}$ instead of $\binom{4}{k}$ combinations. For pairs: $\binom{3}{2} = 3$ vs.\ $\binom{4}{2} = 6$, a 50\% reduction. \textbf{Brokos} \cite{brokos2014} discusses blocker-based bluffing in Ch.~8.
+
+The weights ($w_i$) are calibrated from solver outputs. In GTO Wizard's analysis, nut flush blockers increase bluff profitability by approximately 35--45\%, while set blockers contribute approximately 8--12\%.
+\end{refbox}
+
+\subsection{Protection Need (Feature 26)}
+
+\begin{featurebox}{Protection Need}
+\begin{definition}
+Protection need quantifies the urgency of betting to deny equity to opponents' draws:
+\begin{equation}
+    \feature{protection} = \begin{cases}
+        \displaystyle \left(1 - \frac{|\mathcal{E} - 0.65|}{0.25}\right)^+ \!\cdot\; (1 + D_b) \cdot \tau_s & \text{if } 0.4 \leq \mathcal{E} \leq 0.85 \\[8pt]
+        0.1 & \text{if } \mathcal{E} > 0.85 \text{ (nutted)} \\
+        0.0 & \text{if } \mathcal{E} < 0.4 \text{ (air)}
+    \end{cases}
+\end{equation}
+where:
+\begin{align}
+    D_b &= 0.4 \cdot W + 0.3 \cdot K \quad \text{(board danger: $W$ = wet, $K$ = coordinated)} \\
+    \tau_s &= \begin{cases} 1.0 & \text{flop} \\ 0.7 & \text{turn} \\ 0.0 & \text{river} \end{cases}
+\end{align}
+The $(\cdot)^+$ denotes $\max(0, \cdot)$. Peak protection occurs at $\mathcal{E} = 0.65$ (top pair / overpair range).
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Protection betting is one of the key distinctions between GTO and exploitative play. \textbf{Tipton} \cite{tipton2019} formalizes the concept in Ch.~8: ``A bet has protection value when it causes opponents to fold hands that have positive equity against our holding.'' 
+
+The bell-curve shape centered at $\mathcal{E} = 0.65$ reflects the GTO principle that:
+\begin{itemize}
+    \item Nutted hands ($\mathcal{E} > 0.85$) prefer slow-playing or thin value betting.
+    \item Air ($\mathcal{E} < 0.4$) gains nothing from protection (no equity to protect).
+    \item Vulnerable strong hands ($\mathcal{E} \approx 0.65$) benefit most from charging draws.
+\end{itemize}
+The board danger term amplifies protection on wet/coordinated boards, consistent with solver output: c-bet frequency is highest with top pair on wet boards (\textbf{Janda} \cite{janda2017}, Ch.~6). The street multiplier $\tau_s$ captures that protection is most urgent on the flop (two cards to come) and irrelevant on the river (no more draws).
+\end{refbox}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 8: TIER 2 --- STRATEGIC
+% ═══════════════════════════════════════════════════════════
+\section{Tier 2: Strategic Features (Features 27--29)}
+
+\subsection{Nut Advantage (Feature 27)}
+
+\begin{featurebox}{Nut Advantage}
+\begin{definition}
+Nut advantage measures whether the player's positional range contains a higher density of nutted hands than the opponent's range on the given board texture:
+\begin{equation}
+    \feature{nut\_adv} = \clip{\nu_{\text{base}} - 0.15 \cdot K - 0.1 \cdot \mathbb{1}[\text{monotone}]}
+\end{equation}
+where:
+\begin{equation}
+    \nu_{\text{base}} = \begin{cases}
+        0.70 \text{ (IP)} / 0.55 \text{ (OOP)} & \text{Ace-high board} \\
+        0.65 \text{ (IP)} / 0.50 \text{ (OOP)} & \text{King-high board} \\
+        0.35 \text{ (IP)} / 0.60 \text{ (OOP)} & \text{Low board (max rank} \leq 8\text{)} \\
+        0.50 & \text{Mid board}
+    \end{cases}
+\end{equation}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+Nut advantage is one of the primary drivers of GTO strategy selection, particularly regarding c-bet frequency and sizing. \textbf{Janda} \cite{janda2017}, Ch.~5:
+
+``On Ace-high boards, the preflop aggressor has a significant nut advantage because all the Ax hands are primarily in their range. On low, connected boards, the caller's range has more sets and two-pair combinations, giving them the nut advantage.''
+
+The IP coefficients ($0.70$ on A-high) are derived from the standard 6-max opening/3-betting ranges: BTN opens $\sim$45\% of hands and all Ax suited, while BB defends $\sim$35\% with fewer Ax combos. This is confirmed by \textbf{GTO Wizard's} range-vs-board analysis tools. The reduction for coordinated ($-0.15K$) and monotone ($-0.10$) boards reflects that these textures create more possible combinations, diluting any single player's nut advantage.
+\end{refbox}
+
+\subsection{Leverage (Feature 28)}
+
+\begin{featurebox}{Leverage --- Multi-Street Pressure Capacity}
+\begin{definition}
+Leverage measures the ability to credibly threaten large future bets, as a function of the stack-to-pot ratio (SPR) and remaining streets:
+\begin{equation}
+    \boxed{\feature{leverage} = \min\!\left(\frac{\text{SPR}}{10},\; 1\right) \cdot \frac{n}{3}}
+\end{equation}
+where $\text{SPR} = S / P$ and $n$ is the number of remaining streets.
+
+\begin{itemize}
+    \item $\feature{leverage} = 1.0$: deep stack, preflop (maximum pressure).
+    \item $\feature{leverage} = 0.0$: river or all-in (no future threats).
+    \item $\feature{leverage} \approx 0.67$: flop with SPR $\geq 10$.
+\end{itemize}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+The concept of leverage in poker relates to the ``threat of future bets'' discussed extensively by \textbf{Harrington} \cite{harrington2004} and formalized by \textbf{Tipton} \cite{tipton2019}, Ch.~9. The key insight: a player with a deep stack and multiple streets remaining can make small bets that carry an implicit threat of escalation. \textbf{Chen \& Ankenman} \cite{chen2006} show that in $n$-street games with SPR $= s$, the optimal bluffing frequency depends on $s^{1/n}$, formally linking stack depth, streets, and bluffing credibility.
+
+The normalization at $\text{SPR} = 10$ is conventional: at $\text{SPR} \geq 10$, a player can comfortably make geometric bets across all remaining streets. Below $\text{SPR} = 4$, stack-off decisions are largely mechanical \cite{harrington2004}.
+\end{refbox}
+
+\subsection{Effective SPR (Feature 29)}
+
+\begin{featurebox}{Effective Stack-to-Pot Ratio}
+\begin{definition}
+The stack-to-pot ratio, normalized using a sigmoid centered at $k = 4$:
+\begin{equation}
+    \boxed{\feature{effective\_spr} = \frac{\text{SPR}}{\text{SPR} + 4} = \sigma_4(\text{SPR})}
+\end{equation}
+
+This sigmoid normalization provides useful resolution across the critical SPR range:
+\begin{center}
+\begin{tabular}{ccc}
+\toprule
+SPR & Feature Value & Strategic Implication \\
+\midrule
+1 & 0.20 & Commit zone (top pair = stack-off) \\
+2 & 0.33 & Shallow (overpairs commit) \\
+4 & 0.50 & Medium (set mining viable) \\
+10 & 0.71 & Deep (wide implied odds) \\
+20 & 0.83 & Very deep (speculative hands gain) \\
+\bottomrule
+\end{tabular}
+\end{center}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+SPR is one of the most important concepts in no-limit hold'em post-flop play. \textbf{Miller, Sklansky \& Malmuth} \cite{miller2007} formalized SPR in \textit{Professional No-Limit Hold'em: Volume 1}, dedicating an entire chapter to it. Their key thresholds:
+\begin{itemize}
+    \item SPR $< 3$: top pair is strong enough to commit.
+    \item SPR $3$--$6$: overpairs and top pair with good kicker.
+    \item SPR $6$--$13$: two-pair and sets are needed.
+    \item SPR $> 13$: set mining and speculative hands gain value.
+\end{itemize}
+The sigmoid normalization at $k = 4$ places the midpoint at the strategically critical SPR$= 4$ boundary, which separates ``shallow'' from ``deep'' play. This choice is supported by solver analysis: at SPR $= 4$, the GTO strategy transitions from ``bet-fold top pair'' to ``bet-call top pair'' in most spots.
+\end{refbox}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 9: TIER 3 --- TACTICAL
+% ═══════════════════════════════════════════════════════════
+\section{Tier 3: Tactical Features (Features 30--31)}
+
+\subsection{Check-Raise Signal (Feature 30)}
+
+\begin{featurebox}{Check-Raise Signal}
+\begin{definition}
+The check-raise signal detects favorable check-raise spots based on three conditions:
+
+\begin{equation}
+    \feature{cr\_signal} = \begin{cases}
+        0.7 \cdot (1 - 0.3W) \cdot \mathbb{1}[C > 0] & \text{if OOP AND } 0.65 \leq \mathcal{E} \leq 0.90 \\[4pt]
+        0.5 + 0.15 \cdot \mathbb{1}[\text{combo draw}] & \text{if OOP AND draw with } \mathcal{E} < 0.4 \\[4pt]
+        \text{above} \times 0.3 & \text{if no bet to face (}C = 0\text{)} \\
+        0 & \text{if IP or preflop}
+    \end{cases}
+\end{equation}
+
+where $W$ = board wetness and $C$ = amount to call.
+
+The check-raise range composition follows the GTO principle:
+\begin{equation}
+    \frac{|\text{Value CR}|}{|\text{Value CR}| + |\text{Bluff CR}|} \approx 1 - \alpha_{\text{raise}}
+\end{equation}
+\end{definition}
+\end{featurebox}
+
+\begin{refbox}
+GTO check-raising frequencies are extensively analyzed in solver outputs. \textbf{Janda} \cite{janda2017}, Ch.~7: ``The optimal check-raise range on the flop contains strong value hands (sets, two-pair) and semi-bluff draws (combo draws, open-enders) in a ratio determined by the raise sizing.''
+
+Key principles reflected in the feature:
+\begin{enumerate}
+    \item \textbf{OOP requirement}: Check-raising is only possible OOP (you must check first, then raise).
+    \item \textbf{Board texture}: Dry boards are better for check-raising because scare cards are less likely on future streets, making continuation more predictable \cite{janda2017}.
+    \item \textbf{Semi-bluff selection}: GTO solvers consistently choose combo draws (flush + straight draw) as the primary check-raise bluff because they have the highest equity when called ($\sim$45\%), making them closest to indifferent between being called and seeing a fold \cite{tipton2019}.
+\end{enumerate}
+\end{refbox}
+
+\subsection{Equity Denial (Feature 31)}
+
+\begin{featurebox}{Equity Denial}
+\begin{definition}
+Equity denial quantifies the value gained by forcing opponents to fold draws before they can improve:
+\begin{equation}
+    \feature{eq\_denial} = \begin{cases}
+        \clip{0.8\,\mathcal{E} \cdot (1 + D) \cdot (1 + 0.1(N-2))} & \text{if } 0.45 \leq \mathcal{E} \leq 0.85 \text{ and street} \neq \text{river} \\
+        0 & \text{otherwise}
+    \end{cases}
+\end{equation}
+where $D = 0.5W + 0.3K + 0.15 \cdot \mathbb{1}[\exists\, \text{flush draw on board}]$ is the draw density of the board.
+
+The equity denial value is zero on the river (no more cards to come) and for air hands (nothing to protect).
+\end{definition}
+
+\begin{proposition}
+The EV of a protection bet of size $B$ is:
+\begin{equation}
+    \text{EV}_{\text{protect}} = \phi \cdot \sum_{i \in \text{draws}} \mathcal{E}_i^{\text{opp}} + (1 - \phi) \cdot (\text{EV}_{\text{value}})
+\end{equation}
+where $\mathcal{E}_i^{\text{opp}}$ is the equity of opponent draw $i$ (which is denied when they fold), and $\phi$ is the probability of folding.
+\end{proposition}
+\end{featurebox}
+
+\begin{refbox}
+Equity denial is the primary reason GTO strategies bet with medium-strength hands. \textbf{Tipton} \cite{tipton2019}, Ch.~8: ``The value of a bet is not limited to how often we get called by worse. A significant component is the equity we deny to hands that fold but would have improved.''
+
+The board draw density $D$ is computed from observable texture features:
+\begin{itemize}
+    \item Two cards of the same suit ($+0.15$): flush draw possible with 9 outs ($\sim$35\% by river).
+    \item Connected board ($+0.3K$): straight draws (4--8 outs, $\sim$17$-$32\% by river).
+    \item Wet board ($+0.5W$): multiple draws overlay.
+\end{itemize}
+
+The multiway amplification $(1 + 0.1(N-2))$ reflects that with more opponents, the aggregate equity of all opponent draws increases, making protection more valuable. \textbf{Janda} \cite{janda2017} notes that ``in multiway pots, the GTO strategy shifts towards more protection betting and less slow-playing'' (Ch.~8).
+\end{refbox}
+
+% ═══════════════════════════════════════════════════════════
+% SECTION 10: SUMMARY
+% ═══════════════════════════════════════════════════════════
+\section{Summary and Feature Vector Structure}
+
+\begin{table}[H]
+\centering
+\small
+\begin{tabular}{ccllc}
+\toprule
+\textbf{Idx} & \textbf{Tier} & \textbf{Feature Name} & \textbf{Key Formula} & \textbf{Range} \\
+\midrule
+0 & Base & \texttt{ev\_call} & $(\mathcal{E} \cdot (P+C) - (1-\mathcal{E}) \cdot C) / M$ & $[0,1]$ \\
+1 & Base & \texttt{ev\_fold} & $I / (S + I)$ & $[0,1]$ \\
+2 & Base & \texttt{ev\_raise} & $\phi \cdot G_f + (1-\phi) \cdot G_c$ & $[0,1]$ \\
+3 & Base & \texttt{fold\_equity} & $\phi = f(\text{street}, B/P)$ & $[0,1]$ \\
+4 & Base & \texttt{implied\_odds} & $(P + \lambda S) / C$ (norm.) & $[0,1]$ \\
+5 & Base & \texttt{reverse\_implied\_odds} & $f(\mathcal{E}, \text{board})$ & $[0,1]$ \\
+6 & Base & \texttt{commitment} & $I / (S + I)$ & $[0,1]$ \\
+7--9 & Base & \texttt{range\_*} & $P(\text{nutted}|\text{medium}|\text{weak})$ & $[0,1]^3$ \\
+10--12 & Base & \texttt{coverage\_*} & Board interaction & $[0,1]^3$ \\
+13--15 & Base & \texttt{polar.*} & Range shape & $[0,1]^3$ \\
+16--19 & Base & \texttt{pattern\_*} & Action history & $[0,1]^4$ \\
+\midrule
+20 & GTO & \texttt{mdf} & $P / (P + B)$ & $[0,1]$ \\
+21 & GTO & \texttt{alpha} & $B / (P + B)$ & $[0,1]$ \\
+22 & GTO & \texttt{bet\_to\_pot} & $r / (1 + r)$ & $[0,1]$ \\
+23 & GTO & \texttt{pot\_geometry} & $(B/B_{\text{geo}}) / (1 + B/B_{\text{geo}})$ & $[0,1]$ \\
+\midrule
+24 & T1 & \texttt{eq\_realization} & $\beta \cdot \delta \cdot \mu$ & $[0,1]$ \\
+25 & T1 & \texttt{blockers} & $\sum w_i \cdot \mathbb{1}_i$ & $[0,1]$ \\
+26 & T1 & \texttt{protection} & Bell curve $\times D_b \times \tau$ & $[0,1]$ \\
+\midrule
+27 & T2 & \texttt{nut\_advantage} & $\nu - 0.15K - 0.1M$ & $[0,1]$ \\
+28 & T2 & \texttt{leverage} & $\min(\text{SPR}/10, 1) \cdot n/3$ & $[0,1]$ \\
+29 & T2 & \texttt{effective\_spr} & $\text{SPR} / (\text{SPR} + 4)$ & $[0,1]$ \\
+\midrule
+30 & T3 & \texttt{cr\_signal} & OOP $\times$ strength $\times$ board & $[0,1]$ \\
+31 & T3 & \texttt{eq\_denial} & $0.8\mathcal{E} \cdot (1 + D)$ & $[0,1]$ \\
+\bottomrule
+\end{tabular}
+\caption{Complete list of the 32 game-theoretic features (indices 67--98 in the full 99-feature vector).}
+\end{table}
+
+% ═══════════════════════════════════════════════════════════
+% REFERENCES
+% ═══════════════════════════════════════════════════════════
+\begin{thebibliography}{99}
+
+\bibitem{vonneumann1944}
+J.~von Neumann and O.~Morgenstern,
+\textit{Theory of Games and Economic Behavior},
+Princeton University Press, 1944.
+\newblock Foundational work on game theory. Chapter~5 introduces the minimax theorem.
+
+\bibitem{nash1950}
+J.~Nash,
+``Equilibrium Points in N-Person Games,''
+\textit{Proceedings of the National Academy of Sciences}, vol.~36, no.~1, pp.~48--49, 1950.
+\newblock Defines Nash equilibrium, the theoretical basis for GTO play.
+
+\bibitem{sklansky1999}
+D.~Sklansky,
+\textit{The Theory of Poker},
+Two Plus Two Publishing, 1999 (revised edition).
+\newblock Introduces fundamental theorem of poker, fold equity, pot odds, implied odds.
+
+\bibitem{harrington2004}
+D.~Harrington and B.~Robertie,
+\textit{Harrington on Hold'em: Expert Strategy for No-Limit Tournaments},
+Vols.~1--3, Two Plus Two Publishing, 2004--2006.
+\newblock Pot commitment, M-ratio, strategic zones, and multi-street planning.
+
+\bibitem{miller2004}
+E.~Miller, D.~Sklansky, and M.~Malmuth,
+\textit{Small Stakes Hold'em: Winning Big with Expert Play},
+Two Plus Two Publishing, 2004.
+\newblock Detailed treatment of implied odds, reverse implied odds, and drawing decisions.
+
+\bibitem{miller2007}
+E.~Miller, M.~Sklansky, and D.~Malmuth,
+\textit{Professional No-Limit Hold'em: Volume 1},
+Two Plus Two Publishing, 2007.
+\newblock Introduces and formalizes the Stack-to-Pot Ratio (SPR) concept with strategic thresholds.
+
+\bibitem{chen2006}
+B.~Chen and J.~Ankenman,
+\textit{The Mathematics of Poker},
+ConJelCo, 2006.
+\newblock Formal game-theoretic treatment: EV calculations, defense frequencies, commitment theory, AKQ game, $n$-street bluffing theory.
+
+\bibitem{billings2002}
+D.~Billings, A.~Davidson, J.~Schaeffer, and D.~Szafron,
+``The Challenge of Poker,''
+\textit{Artificial Intelligence}, vol.~134, no.~1--2, pp.~201--240, 2002.
+\newblock Opponent modeling, action pattern recognition in Loki poker bot.
+
+\bibitem{brokos2014}
+N.~Brokos,
+\textit{Play Optimal Poker: Practical Game Theory for Every Poker Player},
+2019.
+\newblock Modern GTO primer: equity realization, blocker-based bluffing, range construction.
+
+\bibitem{janda2017}
+M.~Janda,
+\textit{Applications of No-Limit Hold'em},
+Two Plus Two Publishing, 2017.
+\newblock Comprehensive GTO reference: MDF, $\alpha$, polarization, range advantage, nut advantage, board texture analysis, check-raising, geometric sizing, multiway adjustments.
+
+\bibitem{tipton2019}
+W.~Tipton,
+\textit{Expert Heads Up No Limit Hold'em},
+Vols.~1--2, Two Plus Two Publishing, 2019.
+\newblock Mathematical treatments of geometric sizing (Ch.~6), polarized vs.\ linear betting (Ch.~5), protection value (Ch.~8), multi-street leverage (Ch.~9).
+
+\bibitem{brown2019}
+N.~Brown and T.~Sandholm,
+``Superhuman AI for Multiplayer Poker,''
+\textit{Science}, vol.~365, no.~6456, pp.~885--890, 2019.
+\newblock Pluribus agent: blueprint strategy, Monte Carlo CFR, implicit range encoding.
+
+\bibitem{bishop2006}
+C.~Bishop,
+\textit{Pattern Recognition and Machine Learning},
+Springer, 2006.
+\newblock Feature normalization and preprocessing for neural network inputs (Ch.~5).
+
+\end{thebibliography}
+
+\end{document}

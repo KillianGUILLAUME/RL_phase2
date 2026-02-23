@@ -346,3 +346,29 @@ class SmartCheckpointCallback(BaseCallback):
             )
             
         return True
+
+
+class PlottingCallback(BaseCallback):
+    """
+    Callback qui génère les graphiques périodiquement à partir des logs TensorBoard.
+    """
+    def __init__(self, log_dir: str, save_dir: str, plot_func, plot_freq: int = 1000, verbose: int = 1):
+        super(PlottingCallback, self).__init__(verbose)
+        self.log_dir = log_dir
+        self.save_dir = save_dir
+        self.plot_func = plot_func
+        self.plot_freq = plot_freq
+
+    def _on_step(self) -> bool:
+        # On déclenche le plot tous les 'plot_freq' steps
+        if self.n_calls % self.plot_freq == 0:
+            if self.verbose > 0:
+                print(f"📈 Mise à jour des graphiques (Step {self.num_timesteps})...")
+            
+            # On protège l'appel pour ne pas crasher l'entraînement si le fichier est verrouillé
+            try:
+                self.plot_func(self.log_dir, self.save_dir, self.num_timesteps)
+            except Exception as e:
+                print(f"⚠️ Erreur lors de la génération des graphiques : {e}")
+                
+        return True

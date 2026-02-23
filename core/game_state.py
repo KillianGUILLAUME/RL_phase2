@@ -56,6 +56,7 @@ class GameState:
     amount_to_call: int              # Montant à payer pour call
     legal_actions: List[str]         # ['fold', 'call', 'raise']
     actions_this_street: List[str]   # Historique de la street courante
+    all_actions_history: List[str]   # Historique COMPLET de la main (pour contexte preflop)
     
     # ═══════════════════════════════════════════════════════════
     # METADATA (optionnel)
@@ -172,6 +173,63 @@ class GameState:
         if self.pot_size == 0:
             return float('inf')
         return self.stack / self.pot_size
+
+    @property
+    def is_single_raised_pot(self) -> bool:
+        """True s'il y a eu exactement 1 seule relance preflop (Single Raised Pot)."""
+        preflop_raises = 0
+        for action in self.all_actions_history:
+            if action == "flop_starts":
+                break
+            if action.startswith("raise_"):
+                preflop_raises += 1
+        return preflop_raises == 1
+
+    @property
+    def is_3bet_pot(self) -> bool:
+        """True s'il y a eu 2 relances ou plus preflop (3-bet+ pot)."""
+        preflop_raises = 0
+        for action in self.all_actions_history:
+            if action == "flop_starts":
+                break
+            if action.startswith("raise_"):
+                preflop_raises += 1
+        return preflop_raises >= 2
+
+    @property
+    def was_multiway_flop(self) -> bool:
+        """
+        Détermine empiriquement s'il y avait >= 3 joueurs au flop.
+        (Compte le nombre de preflop 'call'/'raise' + SB/BB)
+        """
+        # Approximatif: on compte les actions volontaires preflop uniques
+        voluntarily_put_money_in_pot = set()
+        for action in self.all_actions_history:
+            if action == "flop_starts":
+                break
+            # RLCard logs "playerX_action" in custom history? We will parse the logic
+            # For now, let's keep it simple: if current active players >= 3, it was multiway. 
+            # If current active players == 2, we just look if someone folded postflop.
+            pass
+            
+        # Simplification robuste : si actuellement num_players >= 3, c'est forcément multiway.
+        if self.num_active_players >= 3:
+            return True
+            
+        # Si on est heads-up, on cherche juste un 'fold' postflop dans l'historique global
+        postflop = False
+        folds_postflop = 0
+        for action in self.all_actions_history:
+            if action == "flop_starts":
+                postflop = True
+            elif postflop and action == "fold":
+                folds_postflop += 1
+                
+        # Si on est 2 actuellement mais que quelqu'un a fold postflop, c'est qu'on était > 2 au flop
+        if self.num_active_players == 2 and folds_postflop > 0:
+            return True
+            
+        return False
     
     # ═══════════════════════════════════════════════════════════
     # MÉTHODES UTILITAIRES
@@ -232,6 +290,7 @@ class GameState:
             'amount_to_call': self.amount_to_call,
             'legal_actions': self.legal_actions,
             'actions_this_street': self.actions_this_street,
+            'all_actions_history': self.all_actions_history,
             
             # Computed properties
             'effective_stack_bb': round(self.effective_stack_bb, 2),
@@ -282,7 +341,8 @@ if __name__ == '__main__':
         small_blind=50,
         amount_to_call=100,
         legal_actions=['fold', 'call', 'raise'],
-        actions_this_street=[]
+        actions_this_street=[],
+        all_actions_history=[]
     )
     
     print("\n📊 Test 1: Deep stack preflop")
@@ -307,7 +367,8 @@ if __name__ == '__main__':
         small_blind=50,
         amount_to_call=600,
         legal_actions=['fold', 'call'],  # All-in
-        actions_this_street=['bet_600']
+        actions_this_street=['bet_600'],
+        all_actions_history=['raise_200', 'call_200', 'flop_starts', 'bet_600']
     )
     
     print("\n📊 Test 2: Short stack all-in situation")
@@ -333,7 +394,8 @@ if __name__ == '__main__':
         small_blind=25,
         amount_to_call=0,
         legal_actions=['check', 'bet'],
-        actions_this_street=['check']
+        actions_this_street=['check'],
+        all_actions_history=['call_50', 'check', 'flop_starts', 'check']
     )
     
     print("\n📊 Test 3: Custom blinds (25/50)")

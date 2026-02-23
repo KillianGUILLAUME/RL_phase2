@@ -129,7 +129,7 @@ def upload_to_hub(
 
     Exemples:
         url = upload_to_hub(
-            "models/xgb/xgb_pluribus_v1.zip",
+            "models/xgb_87_features/xgb_pluribus_v1.zip",
             "killianguillaume/poker-xgboost-v1"
         )
     """
@@ -262,7 +262,7 @@ Tout contrevenant s'expose à la **fermeture de compte** et à des **poursuites 
 | **Date** | {datetime.now().strftime('%Y-%m-%d')} |
 | **Framework** | RL_phase2 (PyTorch / XGBoost / SB3) |
 | **Jeu** | No-Limit Hold'em 6-max |
-| **Features** | 87 dimensions (cartes, position, stack, GTO) |
+| **Features** | 99 dimensions (cartes, position, stack, GTO) |
 | **Licence** | [CC BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/) |
 
 ## Usage
