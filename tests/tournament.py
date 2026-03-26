@@ -90,7 +90,6 @@ def load_agent(model_path: str, env, label: str = "Agent") -> object:
         else:
             weights = checkpoint
         
-        agent.q_estimator.qnet.load_state_dict(weights)
         agent.q_estimator.qnet.eval()
         print(f"  ⚡ {label}: DQN → {basename}")
         return agent

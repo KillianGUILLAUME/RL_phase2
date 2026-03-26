@@ -140,6 +140,10 @@ class PokerSB3Wrapper(gym.Env):
                 from agents.rule_agents import AdvancedRuleBot
                 self.opponents.append(AdvancedRuleBot(env=self.env))
                 
+            elif cfg == 'psro':
+                from agents.psro_agent import PSROAgent
+                self.opponents.append(PSROAgent(env=self.env))
+
             elif cfg.endswith('.zip'):
                 print(f"⚔️ Siège {i+1} : Chargement du modèle {cfg}")
                 if os.path.exists(cfg):

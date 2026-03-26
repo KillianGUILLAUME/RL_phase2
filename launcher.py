@@ -55,7 +55,7 @@ import argparse
 def main():
     parser = argparse.ArgumentParser(description="Lance l'entraînement de Poker sur AWS EC2")
     parser.add_argument("--script", type=str, default="trainer_sb3_self-play", 
-                        help="Nom du script à lancer dans le dossier training (ex: trainer_sb3 ou trainer_sb3_self-play)")
+                        help="Nom du script à lancer dans le dossier training (ex: trainer_sb3, trainer_sb3_self-play, trainer_psro)")
     args = parser.parse_args()
 
     script_name = args.script.replace('.py', '')

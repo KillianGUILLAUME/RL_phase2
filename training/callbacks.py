@@ -338,7 +338,7 @@ class SmartCheckpointCallback(BaseCallback):
             
             save_sb3_with_version(
                 model=self.model,
-                base_name="ppo_sb3_poker",
+                base_name="psro_training",
                 save_dir=self.save_dir,
                 step=self.num_timesteps,
                 config=self.config,

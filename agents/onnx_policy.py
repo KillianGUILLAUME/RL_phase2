@@ -21,14 +21,14 @@ class OnnxablePolicy(torch.nn.Module):
         logits = self.policy.action_net(latent_pi)
         return logits
 
-def export_model_to_onnx(model_path="champion_10M_steps.zip", output_path="poker_bot_v1.onnx", input_dim=203):
+def export_model_to_onnx(model_path="champion_10M_steps.zip", output_path="poker_bot_v1.onnx", input_dim=203, custom_objects=None):
     from typing import Callable
     def constant_schedule(value: float) -> Callable[[float], float]:
         def func(progress_remaining: float) -> float:
             return value
         return func
 
-    custom_objects = {
+    custom_objects = custom_objects or {
         "learning_rate": constant_schedule(5e-5),
         "lr_schedule": constant_schedule(5e-5),
         "clip_range": constant_schedule(0.15)
@@ -52,6 +52,7 @@ def export_model_to_onnx(model_path="champion_10M_steps.zip", output_path="poker
         output_names=['logits']
     )
     print(f"✅ Modèle ONNX exporté avec succès vers {output_path} !")
+
 class ONNXPokerBot:
     def __init__(self, onnx_model_path: str, env):
         self.env = env
